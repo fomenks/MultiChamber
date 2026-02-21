@@ -1,0 +1,30 @@
+{
+  "name": "multichamber",
+  "version": "1.0.0",
+  "description": "Multi-user OpenChamber system with Ubuntu 24.04 LTS",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:ui\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:ui": "cd ui && npm run dev",
+    "build": "npm run build:ui && npm run build:server",
+    "build:ui": "cd ui && npm run build",
+    "build:server": "cd server && npm run build",
+    "start": "cd server && npm start",
+    "docker:build": "docker build -t multichamber:latest .",
+    "docker:run": "docker-compose up -d",
+    "docker:stop": "docker-compose down",
+    "type-check": "cd server && npx tsc --noEmit && cd ../ui && npx tsc --noEmit"
+  },
+  "keywords": [
+    "openchamber",
+    "multi-user",
+    "docker",
+    "ubuntu"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

@@ -1,0 +1,70 @@
+services:
+  multichamber:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: multichamber
+    hostname: multichamber
+    
+    ports:
+      - "8123:8080"
+      # Dynamic port range for OpenChamber instances (limited to 100 ports)
+      - "10000-10100:10000-10100"
+    
+    environment:
+      # Admin password
+      - MC_ADMIN_PASSWD=123456
+      - NODE_ENV=production
+      - PORT=8080
+      - HOST=0.0.0.0
+      # JWT secret
+      - JWT_SECRET=multichamber-secret-production
+    
+    volumes:
+      # Persist user data
+      - user_data:/home/users
+      # Persist OpenChamber port mappings
+      - app_data:/app/data
+      # Mount OpenCode from host
+      - /home/opencode/workspace/OC/openchamber/packages/web:/app/opencode
+      - /home/opencode/workspace/OC/openchamber/packages/ui:/app/ui
+    
+    # Required for proper user management
+    privileged: true
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '1'
+          memory: 2G
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Networking
+    networks:
+      - multichamber-network
+
+volumes:
+  user_data:
+    driver: local
+  app_data:
+    driver: local
+  opencode_data:
+    driver: local
+
+networks:
+  multichamber-network:
+    driver: bridge
