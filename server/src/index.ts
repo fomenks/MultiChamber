@@ -72,6 +72,7 @@ app.use('/api/admin', authMiddleware, adminRoutes);
 app.use(express.static(path.join(__dirname, '../../ui/dist')));
 
 // Proxy routes - forward to user's OpenChamber instance (BEFORE auth middleware)
+// Using /chamber path to access OpenChamber
 app.use('/chamber', proxyRoutes);
 
 // Apply auth middleware for protected API routes (AFTER static and proxy)

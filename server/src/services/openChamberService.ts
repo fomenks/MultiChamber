@@ -69,15 +69,18 @@ export class OpenChamberService {
   }
 
   async getOrStartInstance(user: User): Promise<OpenChamberInstance> {
-    // Check if there's already an instance for this user
-    const existing = this.instances.get(user.username);
-    if (existing && await this.isInstanceHealthy(existing)) {
-      existing.status = 'running';
-      return existing;
-    }
+    // Use the existing global OpenChamber instance on port 3000
+    const existingPort = 3000;
+    
+    const instance: OpenChamberInstance = {
+      port: existingPort,
+      pid: 0,
+      username: user.username,
+      startTime: new Date(),
+      status: 'running',
+    };
 
-    // Start new instance
-    return this.startInstance(user);
+    return instance;
   }
 
   private async isInstanceHealthy(instance: OpenChamberInstance): Promise<boolean> {
@@ -131,12 +134,12 @@ export class OpenChamberService {
       TERM: 'xterm-256color',
     };
 
-    // Start OpenCode process as the user
-    const opencodeProcess = spawn('su', [
+    // Start OpenChamber process as the user
+    const openchamberProcess = spawn('su', [
       '-',
       user.username,
       '-c',
-      `cd ${workspaceDir} && /app/opencode/start.sh || cd /app/opencode/server && bun start.js --port ${port} --host 127.0.0.1`,
+      `node /usr/lib/node_modules/@openchamber/web/bin/cli.js`,
     ], {
       env,
       detached: true,
@@ -145,7 +148,7 @@ export class OpenChamberService {
 
     const instance: OpenChamberInstance = {
       port,
-      pid: opencodeProcess.pid!,
+      pid: openchamberProcess.pid!,
       username: user.username,
       startTime: new Date(),
       status: 'starting',
@@ -153,7 +156,7 @@ export class OpenChamberService {
 
     this.instances.set(user.username, instance);
     this.portToUser.set(port, user.username);
-    this.processes.set(user.username, opencodeProcess);
+    this.processes.set(user.username, openchamberProcess);
 
     // Save port mapping
     this.savePortMappings();
@@ -164,17 +167,17 @@ export class OpenChamberService {
     instance.status = 'running';
 
     // Handle process exit
-    opencodeProcess.on('exit', (code) => {
+    openchamberProcess.on('exit', (code) => {
       console.log(`OpenChamber for ${user.username} exited with code ${code}`);
       this.cleanupInstance(user.username);
     });
 
     // Log output for debugging
-    opencodeProcess.stdout?.on('data', (data) => {
+    openchamberProcess.stdout?.on('data', (data) => {
       console.log(`[${user.username}] ${data.toString().trim()}`);
     });
 
-    opencodeProcess.stderr?.on('data', (data) => {
+    openchamberProcess.stderr?.on('data', (data) => {
       console.error(`[${user.username}] ${data.toString().trim()}`);
     });
 

@@ -1,17 +1,15 @@
 import { Router } from 'express';
-import { createProxyMiddleware } from 'http-proxy-middleware';
+import * as http from 'http';
 import { OpenChamberService } from '../services/openChamberService.js';
 import { UserService } from '../services/userService.js';
 import { JWTService } from '../services/jwtService.js';
-import type { Request, Response, NextFunction } from 'express';
+import type { Request as ExpressRequest, Response, NextFunction } from 'express';
 
 const router = Router();
 const openChamberService = new OpenChamberService();
 const userService = new UserService();
 
-// Middleware to validate user and get their OpenChamber port
-const validateUserProxy = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  // Get token from header or cookie
+const validateUserProxy = async (req: ExpressRequest, res: Response, next: NextFunction): Promise<void> => {
   let token = req.headers.authorization?.replace('Bearer ', '');
   
   if (!token && req.cookies?.token) {
@@ -35,13 +33,11 @@ const validateUserProxy = async (req: Request, res: Response, next: NextFunction
     return;
   }
 
-  // Attach user info
   (req as any).userInfo = {
     username: user.username,
     isAdmin: user.isAdmin,
   };
 
-  // Try to get OpenChamber instance (optional - continue even if fails)
   try {
     const instance = await openChamberService.getOrStartInstance(user);
     (req as any).openChamberPort = instance.port;
@@ -53,12 +49,10 @@ const validateUserProxy = async (req: Request, res: Response, next: NextFunction
   next();
 };
 
-// Create proxy middleware dynamically based on user's OpenChamber port
-const dynamicProxy = (req: Request, res: Response, next: NextFunction) => {
+const dynamicProxy = (req: ExpressRequest, res: Response, next: NextFunction) => {
   const port = (req as any).openChamberPort;
   const userInfo = (req as any).userInfo;
   
-  // If OpenChamber is not available, serve a placeholder page
   if (!port) {
     const placeholderHtml = `
 <!DOCTYPE html>
@@ -106,31 +100,69 @@ const dynamicProxy = (req: Request, res: Response, next: NextFunction) => {
     return;
   }
 
-  const proxyMiddleware = createProxyMiddleware({
-    target: `http://127.0.0.1:${port}`,
-    changeOrigin: true,
-    ws: true,
-    logLevel: 'debug',
-    onError: (err, req, res) => {
-      console.error('Proxy error:', err);
-      if (!res.headersSent) {
-        res.status(502).json({ error: 'OpenChamber instance unavailable' });
-      }
+  const targetPath = (req.url || '/').replace('/chamber', '') || '/';
+  const targetHost = '127.0.0.1';
+  
+  const options: http.RequestOptions = {
+    hostname: targetHost,
+    port: port,
+    path: targetPath,
+    method: req.method,
+    headers: {
+      ...req.headers,
+      host: `${targetHost}:${port}`,
+      'X-MultiChamber-User': userInfo?.username || '',
+      'X-MultiChamber-Admin': userInfo?.isAdmin ? 'true' : 'false',
+      'X-Forwarded-Prefix': '/chamber',
+      'X-Forwarded-Uri': targetPath,
     },
-    onProxyReq: (proxyReq, req) => {
-      // Add user info header for OpenChamber to identify user
-      const userInfo = (req as any).userInfo;
-      if (userInfo) {
-        proxyReq.setHeader('X-MultiChamber-User', userInfo.username);
-        proxyReq.setHeader('X-MultiChamber-Admin', userInfo.isAdmin ? 'true' : 'false');
-      }
-    },
+  };
+
+  const proxyReq = http.request(options, (proxyRes) => {
+    const contentType = proxyRes.headers['content-type'] || '';
+    
+    if (contentType.includes('text/html')) {
+      const chunks: Buffer[] = [];
+      
+      proxyRes.on('data', (chunk) => {
+        chunks.push(chunk);
+      });
+      
+      proxyRes.on('end', () => {
+        const body = Buffer.concat(chunks).toString('utf8');
+        const rewrittenBody = body
+          .replace(/(href=["'])\//g, '$1/chamber/')
+          .replace(/(src=["'])\//g, '$1/chamber/')
+          .replace(/(action=["'])\//g, '$1/chamber/')
+          .replace(/(url\()\//g, '$1/chamber/')
+          .replace(/location\.origin/g, "location.origin + '/chamber'");
+        
+        res.writeHead(proxyRes.statusCode || 200, {
+          ...proxyRes.headers,
+          'content-length': Buffer.byteLength(rewrittenBody),
+        });
+        res.end(rewrittenBody);
+      });
+    } else {
+      res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+      proxyRes.pipe(res);
+    }
   });
 
-  proxyMiddleware(req, res, next);
+  proxyReq.on('error', (err) => {
+    console.error('Proxy request error:', err.message);
+    if (!res.headersSent) {
+      res.status(502).json({ error: 'OpenChamber instance unavailable' });
+    }
+  });
+
+  // Handle request body - Express has already parsed it
+  if (req.body && Object.keys(req.body).length > 0) {
+    proxyReq.write(JSON.stringify(req.body));
+  }
+  proxyReq.end();
 };
 
-// Proxy all requests to user's OpenChamber instance
-router.all('*', validateUserProxy, dynamicProxy);
+router.all('/*', validateUserProxy, dynamicProxy);
 
 export default router;
