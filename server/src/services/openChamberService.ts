@@ -1,6 +1,6 @@
-import { spawn, ChildProcess } from 'child_process';
-import * as net from 'net';
+import { execSync } from 'child_process';
 import * as fs from 'fs';
+import * as net from 'net';
 import * as path from 'path';
 import type { OpenChamberInstance, User } from '../types/index.js';
 
@@ -11,7 +11,6 @@ const PORT_FILE = '/app/data/openchamber-ports.json';
 export class OpenChamberService {
   private instances: Map<string, OpenChamberInstance> = new Map();
   private portToUser: Map<number, string> = new Map();
-  private processes: Map<string, ChildProcess> = new Map();
 
   constructor() {
     this.loadPortMappings();
@@ -45,28 +44,6 @@ export class OpenChamberService {
     }
   }
 
-  private async findAvailablePort(): Promise<number> {
-    for (let port = MIN_PORT; port <= MAX_PORT; port++) {
-      if (!this.portToUser.has(port)) {
-        const isAvailable = await this.checkPortAvailable(port);
-        if (isAvailable) {
-          return port;
-        }
-      }
-    }
-    throw new Error('No available ports');
-  }
-
-  private checkPortAvailable(port: number): Promise<boolean> {
-    return new Promise((resolve) => {
-      const server = net.createServer();
-      server.listen(port, '127.0.0.1', () => {
-        server.close(() => resolve(true));
-      });
-      server.on('error', () => resolve(false));
-    });
-  }
-
   async getOrStartInstance(user: User): Promise<OpenChamberInstance> {
     const existingInstance = this.instances.get(user.username);
     
@@ -77,18 +54,29 @@ export class OpenChamberService {
       }
     }
 
-    return await this.startInstance(user);
+    const username = user.username;
+    
+    const port = await this.startInstanceUsingScript(user);
+    
+    const instance: OpenChamberInstance = {
+      port,
+      pid: this.getPidFromPidFile(username),
+      username: username,
+      startTime: new Date(),
+      status: 'running',
+    };
+
+    this.instances.set(username, instance);
+    this.portToUser.set(port, username);
+
+    this.savePortMappings();
+
+    console.log(`OpenChamber instance for ${username} is now running on port ${port}`);
+
+    return instance;
   }
 
   private async isInstanceHealthy(instance: OpenChamberInstance): Promise<boolean> {
-    if (instance.pid) {
-      try {
-        process.kill(instance.pid, 0);
-      } catch {
-        return false;
-      }
-    }
-
     if (instance.status === 'starting') {
       return false;
     }
@@ -115,108 +103,20 @@ export class OpenChamberService {
     });
   }
 
-  private async startInstance(user: User): Promise<OpenChamberInstance> {
-    const port = await this.findAvailablePort();
-    const workspaceDir = path.join(user.homeDir, 'workspace');
-    
-    fs.mkdirSync(workspaceDir, { recursive: true });
-
-    const env = {
-      ...process.env,
-      HOME: user.homeDir,
-      USER: user.username,
-      OPENCODE_PORT: '4096',
-      OPENCODE_HOST: '127.0.0.1',
-      FORCE_COLOR: '1',
-      TERM: 'xterm-256color',
-    };
-
-    const openchamberProcess = spawn('node', [
-      '/usr/lib/node_modules/@openchamber/web/bin/cli.js',
-      'serve',
-      '--daemon',
-      '-p',
-      port.toString(),
-    ], {
-      env,
-      detached: true,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    const instance: OpenChamberInstance = {
-      port,
-      pid: openchamberProcess.pid!,
-      username: user.username,
-      startTime: new Date(),
-      status: 'starting',
-    };
-
-    this.instances.set(user.username, instance);
-    this.portToUser.set(port, user.username);
-    this.processes.set(user.username, openchamberProcess);
-
-    this.savePortMappings();
-
-    openchamberProcess.stdout?.on('data', (data) => {
-      console.log(`[${user.username}] ${data.toString().trim()}`);
-    });
-
-    openchamberProcess.stderr?.on('data', (data) => {
-      console.error(`[${user.username}] ${data.toString().trim()}`);
-    });
-
-    console.log(`Starting OpenChamber instance for ${user.username} on port ${port}`);
-    await this.waitForOpenChamber(port);
-    
-    instance.status = 'running';
-    console.log(`OpenChamber instance for ${user.username} is now running on port ${port}`);
-
-    openchamberProcess.on('exit', (code) => {
-      console.log(`OpenChamber for ${user.username} exited with code ${code}`);
-      this.cleanupInstance(user.username);
-    });
-
-    return instance;
-  }
-
-  private async waitForOpenChamber(port: number, timeout: number = 60000): Promise<void> {
-    const startTime = Date.now();
-    
-    console.log(`Waiting for OpenChamber to start on port ${port}...`);
-    
-    while (Date.now() - startTime < timeout) {
-      const isReady = await new Promise<boolean>((resolve) => {
-        const socket = new net.Socket();
-        socket.setTimeout(1000);
-        
-        socket.on('connect', () => {
-          socket.destroy();
-          resolve(true);
-        });
-        
-        socket.on('error', () => resolve(false));
-        socket.on('timeout', () => {
-          socket.destroy();
-          resolve(false);
-        });
-        
-        socket.connect(port, '127.0.0.1');
-      });
-
-      if (isReady) {
-        console.log(`OpenChamber is ready on port ${port}`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return;
+  private async startInstanceUsingScript(user: User): Promise<number> {
+    try {
+      const output = execSync(`/usr/local/bin/runOC.sh ${user.username}`, { encoding: 'utf-8' });
+      const port = parseInt(output.trim(), 10);
+      
+      if (isNaN(port) || port < MIN_PORT || port > MAX_PORT) {
+        throw new Error(`Invalid port returned: ${port}`);
       }
 
-      if ((Date.now() - startTime) % 5000 < 500) {
-        console.log(`Still waiting for OpenChamber on port ${port} (${Math.round((Date.now() - startTime) / 1000)}s)...`);
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 500));
+      return port;
+    } catch (error) {
+      console.error(`Failed to start OpenChamber for ${user.username}:`, error);
+      throw new Error(`Failed to start OpenChamber instance: ${(error as Error).message}`);
     }
-
-    throw new Error(`Timeout waiting for OpenChamber to start on port ${port} after ${timeout / 1000}s`);
   }
 
   private cleanupInstance(username: string): void {
@@ -224,21 +124,32 @@ export class OpenChamberService {
     if (instance) {
       this.portToUser.delete(instance.port);
       this.instances.delete(username);
-      this.processes.delete(username);
       this.savePortMappings();
     }
   }
 
   stopInstance(username: string): void {
-    const process = this.processes.get(username);
-    if (process) {
-      process.kill('SIGTERM');
-      setTimeout(() => {
-        if (!process.killed) {
-          process.kill('SIGKILL');
+    const pidFile = `/tmp/${username}_OC.pid`;
+    
+    try {
+      if (fs.existsSync(pidFile)) {
+        const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+        if (pid > 0) {
+          try {
+            process.kill(pid, 'SIGTERM');
+          } catch {
+            try {
+              process.kill(pid, 'SIGKILL');
+            } catch {
+            }
+          }
         }
-      }, 10000);
+        fs.unlinkSync(pidFile);
+      }
+    } catch (error) {
+      console.error(`Error stopping OpenChamber for ${username}:`, error);
     }
+    
     this.cleanupInstance(username);
   }
 

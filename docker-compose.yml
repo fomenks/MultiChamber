@@ -8,7 +8,6 @@ services:
     
     ports:
       - "8123:8080"
-      - "10000-10100:10000-10100"
     
     environment:
       - MC_ADMIN_PASSWD=qwe321

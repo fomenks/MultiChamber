@@ -19,13 +19,6 @@ fi
 
 mkdir -p /app/data
 
-# echo "Starting OpenChamber instance..."
-# openchamber serve -p 10000 -d &
-# OPENCHAMBER_PID=$!
-
-echo "Waiting for OpenChamber to start..."
-sleep 5
-
 echo "Starting MultiChamber server..."
 cd /app/server
 exec node dist/index.js
