@@ -143,10 +143,18 @@ export class OpenChamberService {
     try {
       const username = user.username;
       console.log(`Starting OpenChamber for user ${username} using runOC.sh`);
-      const output = execSync(`/usr/local/bin/runOC.sh ${username}`, { encoding: 'utf-8' });
-      const port = parseInt(output.trim(), 10);
+      
+      const result = execSync(`/usr/local/bin/runOC.sh ${username}`, { 
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
+      
+      // Extract port from the last line of output
+      const lines = result.trim().split('\n');
+      const port = parseInt(lines[lines.length - 1].trim(), 10);
       
       if (isNaN(port) || port < MIN_PORT || port > MAX_PORT) {
+        console.error(`Failed to parse port from output. Full output:\n${result}`);
         throw new Error(`Invalid port returned: ${port}`);
       }
 
