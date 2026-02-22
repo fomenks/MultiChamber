@@ -9,6 +9,7 @@ import { authMiddleware } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import proxyRoutes from './routes/proxy.js';
+import { OpenChamberService } from './services/openChamberService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -83,6 +84,8 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
+const openChamberService = new OpenChamberService();
+
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`MultiChamber server running on port ${PORT}`);
   console.log(`Environment: ${NODE_ENV}`);
@@ -92,6 +95,7 @@ process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
   server.close(() => {
     console.log('Server closed');
+    openChamberService.shutdownAll();
     process.exit(0);
   });
 });
@@ -100,6 +104,7 @@ process.on('SIGINT', () => {
   console.log('SIGINT received, shutting down gracefully');
   server.close(() => {
     console.log('Server closed');
+    openChamberService.shutdownAll();
     process.exit(0);
   });
 });

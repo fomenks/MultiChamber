@@ -47,12 +47,12 @@ export class OpenChamberService {
   async getOrStartInstance(user: User): Promise<OpenChamberInstance> {
     const existingInstance = this.instances.get(user.username);
     
-    if (existingInstance && existingInstance.status === 'running') {
-      const isHealthy = await this.isInstanceHealthy(existingInstance);
-      if (isHealthy) {
-        return existingInstance;
-      }
-    }
+     if (existingInstance && existingInstance.status === 'running') {
+       const isHealthy = await this.isInstanceHealthy(existingInstance);
+       if (isHealthy) {
+         return existingInstance;
+       }
+     }
 
     const username = user.username;
     
@@ -76,40 +76,85 @@ export class OpenChamberService {
     return instance;
   }
 
-  private async isInstanceHealthy(instance: OpenChamberInstance): Promise<boolean> {
+  private isInstanceHealthy(instance: OpenChamberInstance): Promise<boolean> {
+    const port = instance.port;
+    console.log(`Health check for OpenChamber instance on port ${port}`);
+
     if (instance.status === 'starting') {
-      return false;
+      console.log(`Instance on port ${port} is still starting`);
+      return Promise.resolve(false);
     }
 
     return new Promise((resolve) => {
       const socket = new net.Socket();
-      socket.setTimeout(1000);
+      socket.setTimeout(5000);
       
       socket.on('connect', () => {
+        console.log(`Health check passed for port ${port}`);
         socket.destroy();
         resolve(true);
       });
       
-      socket.on('error', () => {
+      socket.on('error', (err) => {
+        console.log(`Health check failed for port ${port}: ${(err as Error).message}`);
         resolve(false);
       });
       
       socket.on('timeout', () => {
+        console.log(`Health check timed out for port ${port}`);
         socket.destroy();
         resolve(false);
       });
       
-      socket.connect(instance.port, '127.0.0.1');
+      socket.connect(port, '127.0.0.1');
     });
+  }
+
+  private isPortAvailable(port: number): boolean {
+    try {
+      const socket = new net.Socket();
+      socket.connect(port, '127.0.0.1');
+      socket.destroy();
+      return false;
+    } catch {
+      return true;
+    }
+  }
+
+  private async waitForPortReady(port: number, timeoutMs: number = 30000): Promise<boolean> {
+    console.log(`Waiting for port ${port} to be ready (timeout: ${timeoutMs}ms)`);
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeoutMs) {
+      if (this.isPortAvailable(port)) {
+        console.log(`Port ${port} is not available (in use), waiting...`);
+      } else {
+        console.log(`Port ${port} is now available`);
+        return true;
+      }
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    console.error(`Timeout waiting for port ${port} to be ready after ${timeoutMs}ms`);
+    return false;
   }
 
   private async startInstanceUsingScript(user: User): Promise<number> {
     try {
-      const output = execSync(`/usr/local/bin/runOC.sh ${user.username}`, { encoding: 'utf-8' });
+      const username = user.username;
+      console.log(`Starting OpenChamber for user ${username} using runOC.sh`);
+      const output = execSync(`/usr/local/bin/runOC.sh ${username}`, { encoding: 'utf-8' });
       const port = parseInt(output.trim(), 10);
       
       if (isNaN(port) || port < MIN_PORT || port > MAX_PORT) {
         throw new Error(`Invalid port returned: ${port}`);
+      }
+
+      console.log(`Started OpenChamber instance for ${username} on port ${port}`);
+
+      const portReady = await this.waitForPortReady(port, 30000);
+      if (!portReady) {
+        throw new Error(`Port ${port} did not become ready within 30 seconds`);
       }
 
       return port;
@@ -134,17 +179,30 @@ export class OpenChamberService {
     try {
       if (fs.existsSync(pidFile)) {
         const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+        console.log(`Stopping OpenChamber instance for ${username} with PID ${pid}`);
+        
         if (pid > 0) {
           try {
+            process.kill(pid, 0);
+            console.log(`Process ${pid} exists, sending SIGTERM`);
             process.kill(pid, 'SIGTERM');
-          } catch {
+          } catch (err) {
+            console.log(`Process ${pid} does not exist or cannot be killed with SIGTERM: ${(err as Error).message}`);
+          }
+          
+          setTimeout(() => {
             try {
+              process.kill(pid, 0);
+              console.log(`Process ${pid} still running, sending SIGKILL`);
               process.kill(pid, 'SIGKILL');
             } catch {
+              console.log(`Process ${pid} has terminated`);
             }
-          }
+          }, 5000);
         }
         fs.unlinkSync(pidFile);
+      } else {
+        console.log(`No PID file found for ${username}, nothing to stop`);
       }
     } catch (error) {
       console.error(`Error stopping OpenChamber for ${username}:`, error);
@@ -153,12 +211,56 @@ export class OpenChamberService {
     this.cleanupInstance(username);
   }
 
+  private getPidFromPidFile(username: string): number {
+    const pidFile = `/tmp/${username}_OC.pid`;
+    
+    try {
+      if (fs.existsSync(pidFile)) {
+        const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+        return pid;
+      }
+    } catch (error) {
+      console.error(`Error reading PID file for ${username}:`, error);
+    }
+    
+    return 0;
+  }
+
   getInstance(username: string): OpenChamberInstance | null {
     return this.instances.get(username) || null;
   }
 
   getAllInstances(): OpenChamberInstance[] {
     return Array.from(this.instances.values());
+  }
+
+  shutdownAll(): void {
+    console.log('Shutting down all OpenChamber instances');
+    
+    for (const [username, instance] of this.instances) {
+      try {
+        const pidFile = `/tmp/${username}_OC.pid`;
+        if (fs.existsSync(pidFile)) {
+          const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+          if (pid > 0) {
+            try {
+              process.kill(pid, 0);
+              console.log(`Killing OpenChamber process ${pid} for ${username} with SIGKILL`);
+              process.kill(pid, 'SIGKILL');
+            } catch {
+              console.log(`Process ${pid} already terminated`);
+            }
+          }
+          fs.unlinkSync(pidFile);
+        }
+      } catch (error) {
+        console.error(`Error shutting down OpenChamber for ${username}:`, error);
+      }
+    }
+    
+    this.instances.clear();
+    this.portToUser.clear();
+    this.savePortMappings();
   }
 
   private startHealthCheck(): void {
