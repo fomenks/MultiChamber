@@ -110,15 +110,28 @@ export class OpenChamberService {
     });
   }
 
-  private isPortAvailable(port: number): boolean {
-    try {
+  private isPortInUse(port: number): Promise<boolean> {
+    return new Promise((resolve) => {
       const socket = new net.Socket();
+      const timeout = setTimeout(() => {
+        socket.destroy();
+        resolve(false); // Timeout = port not in use
+      }, 1000);
+      
+      socket.on('connect', () => {
+        clearTimeout(timeout);
+        socket.destroy();
+        resolve(true); // Connected = port in use
+      });
+      
+      socket.on('error', () => {
+        clearTimeout(timeout);
+        socket.destroy();
+        resolve(false); // Error = port not in use
+      });
+      
       socket.connect(port, '127.0.0.1');
-      socket.destroy();
-      return false;
-    } catch {
-      return true;
-    }
+    });
   }
 
   private async waitForPortReady(port: number, timeoutMs: number = 30000): Promise<boolean> {
@@ -126,13 +139,14 @@ export class OpenChamberService {
     const startTime = Date.now();
     
     while (Date.now() - startTime < timeoutMs) {
-      if (this.isPortAvailable(port)) {
-        console.log(`Port ${port} is not available (in use), waiting...`);
-      } else {
-        console.log(`Port ${port} is now available`);
+      const inUse = await this.isPortInUse(port);
+      if (inUse) {
+        console.log(`Port ${port} is now in use (ready)`);
         return true;
+      } else {
+        console.log(`Port ${port} is not in use, waiting...`);
       }
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
     console.error(`Timeout waiting for port ${port} to be ready after ${timeoutMs}ms`);
