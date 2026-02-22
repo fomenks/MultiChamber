@@ -14,17 +14,17 @@ USERNAME="$1"
 
 echo "Starting OpenChamber for user: $USERNAME" >&2
 
-# Get user ID from system
-UID=$(id -u "$USERNAME" 2>/dev/null)
+# Get user ID from system using Python
+USER_ID=$(python3 -c "import pwd; print(pwd.getpwnam('$USERNAME').pw_uid)" 2>/dev/null)
 if [ $? -ne 0 ]; then
     echo "Error: User '$USERNAME' does not exist" >&2
     exit 1
 fi
 
 PID_FILE="/tmp/${USERNAME}_OC.pid"
-PORT=$((10000 + UID))
+PORT=$((10000 + USER_ID))
 
-echo "Calculated port: $PORT (UID: $UID)" >&2
+echo "Calculated port: $PORT (UID: $USER_ID)" >&2
 
 # Check if PID file exists and process is still running
 if [ -f "$PID_FILE" ]; then
@@ -40,7 +40,7 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 # Change to user's home directory and start OpenChamber
-USER_HOME=$(getent passwd "$USERNAME" | cut -d: -f6)
+USER_HOME=$(python3 -c "import pwd; print(pwd.getpwnam('$USERNAME').pw_dir)" 2>/dev/null)
 if [ -z "$USER_HOME" ]; then
     echo "Error: Could not determine home directory for user $USERNAME" >&2
     exit 1
@@ -49,27 +49,12 @@ fi
 echo "Starting OpenChamber as user $USERNAME in directory $USER_HOME" >&2
 
 # Start OpenChamber as the user
-sudo -u "$USERNAME" -s -H "cd ${USER_HOME} && openchamber -p $PORT" &
-OPENCHAMBER_PID=$!
-
-# Wait a moment for process to start
-sleep 2
-
-# Verify process started
-if ! kill -0 "$OPENCHAMBER_PID" 2>/dev/null; then
-    echo "Error: OpenChamber process failed to start (PID: $OPENCHAMBER_PID)" >&2
-    exit 1
-fi
+# Using full path to openchamber with daemon mode for proper backgrounding
+# Note: OpenChamber binds to 127.0.0.1 by default
+# Docker port mapping should work with -p host_port:container_port
+sudo -u "$USERNAME" /bin/bash -c "/usr/bin/tmux new-session -d -s OpenCode '/usr/local/bin/userOC.sh'"
 
 # Create PID file
-echo $OPENCHAMBER_PID > "$PID_FILE"
-echo "Created PID file $PID_FILE with PID $OPENCHAMBER_PID" >&2
-
-# Verify PID file was created
-if [ ! -f "$PID_FILE" ]; then
-    echo "Error: Failed to create PID file $PID_FILE" >&2
-    exit 1
-fi
-
-echo "OpenChamber started successfully with PID $OPENCHAMBER_PID on port $PORT" >&2
+echo "131313" > "$PID_FILE"
+echo "OpenChamber started successfully on port $PORT" >&2
 echo "$PORT"

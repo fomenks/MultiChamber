@@ -20,15 +20,14 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     software-properties-common \
     unzip \
-    vim
-    
-#    && rm -rf /var/lib/apt/lists/*
+    vim \
+    tmux
 
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
+    && apt-get install -y nodejs 
+    
 RUN npm install -g @openchamber/web
+RUN which openchamber || echo "openchamber not found"
 RUN npm install -g opencode-ai
 
 WORKDIR /app
@@ -54,6 +53,9 @@ RUN chmod +x /usr/local/bin/init-system.sh
 
 COPY scripts/runOC.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/runOC.sh
+
+COPY scripts/userOC.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/userOC.sh
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
