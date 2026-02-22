@@ -10,41 +10,49 @@ const openChamberService = new OpenChamberService();
 const userService = new UserService();
 
 const validateUserProxy = async (req: ExpressRequest, res: Response, next: NextFunction): Promise<void> => {
-  let token = req.headers.authorization?.replace('Bearer ', '');
-  
-  if (!token && req.cookies?.token) {
-    token = req.cookies.token;
+  if (!req.user) {
+    let token = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!token && req.cookies?.token) {
+      token = req.cookies.token;
+    }
+
+    if (!token) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const payload = JWTService.verifyToken(token);
+    if (!payload) {
+      res.status(401).json({ error: 'Invalid token' });
+      return;
+    }
+
+    const user = userService.getUser(payload.username);
+    if (!user) {
+      res.status(401).json({ error: 'User not found' });
+      return;
+    }
+
+    (req as any).userInfo = {
+      username: user.username,
+      isAdmin: user.isAdmin,
+    };
+  } else {
+    (req as any).userInfo = {
+      username: req.user.username,
+      isAdmin: req.user.isAdmin,
+    };
   }
 
-  if (!token) {
-    res.status(401).json({ error: 'Authentication required' });
-    return;
-  }
-
-  const payload = JWTService.verifyToken(token);
-  if (!payload) {
-    res.status(401).json({ error: 'Invalid token' });
-    return;
-  }
-
-  const user = userService.getUser(payload.username);
-  if (!user) {
-    res.status(401).json({ error: 'User not found' });
-    return;
-  }
-
-  (req as any).userInfo = {
-    username: user.username,
-    isAdmin: user.isAdmin,
+  const userInfo = (req as any).userInfo as { username: string; isAdmin: boolean };
+  const user: { username: string; homeDir: string } = {
+    username: userInfo.username,
+    homeDir: `/home/${userInfo.username}`
   };
-
-  try {
-    const instance = await openChamberService.getOrStartInstance(user);
-    (req as any).openChamberPort = instance.port;
-  } catch (error) {
-    console.warn('OpenChamber not available for user:', user.username);
-    (req as any).openChamberPort = null;
-  }
+  
+  const instance = await openChamberService.getOrStartInstance(user as any);
+  (req as any).openChamberPort = instance.port;
   
   next();
 };

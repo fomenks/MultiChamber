@@ -89,6 +89,10 @@ export class OpenChamberService {
       }
     }
 
+    if (instance.status === 'starting') {
+      return false;
+    }
+
     return new Promise((resolve) => {
       const socket = new net.Socket();
       socket.setTimeout(1000);
@@ -130,6 +134,7 @@ export class OpenChamberService {
     const openchamberProcess = spawn('node', [
       '/usr/lib/node_modules/@openchamber/web/bin/cli.js',
       'serve',
+      '--daemon',
       '-p',
       port.toString(),
     ], {
@@ -160,9 +165,11 @@ export class OpenChamberService {
       console.error(`[${user.username}] ${data.toString().trim()}`);
     });
 
+    console.log(`Starting OpenChamber instance for ${user.username} on port ${port}`);
     await this.waitForOpenChamber(port);
     
     instance.status = 'running';
+    console.log(`OpenChamber instance for ${user.username} is now running on port ${port}`);
 
     openchamberProcess.on('exit', (code) => {
       console.log(`OpenChamber for ${user.username} exited with code ${code}`);
@@ -172,8 +179,10 @@ export class OpenChamberService {
     return instance;
   }
 
-  private async waitForOpenChamber(port: number, timeout: number = 30000): Promise<void> {
+  private async waitForOpenChamber(port: number, timeout: number = 60000): Promise<void> {
     const startTime = Date.now();
+    
+    console.log(`Waiting for OpenChamber to start on port ${port}...`);
     
     while (Date.now() - startTime < timeout) {
       const isReady = await new Promise<boolean>((resolve) => {
@@ -195,14 +204,19 @@ export class OpenChamberService {
       });
 
       if (isReady) {
+        console.log(`OpenChamber is ready on port ${port}`);
         await new Promise(resolve => setTimeout(resolve, 1000));
         return;
+      }
+
+      if ((Date.now() - startTime) % 5000 < 500) {
+        console.log(`Still waiting for OpenChamber on port ${port} (${Math.round((Date.now() - startTime) / 1000)}s)...`);
       }
 
       await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    throw new Error('Timeout waiting for OpenChamber to start');
+    throw new Error(`Timeout waiting for OpenChamber to start on port ${port} after ${timeout / 1000}s`);
   }
 
   private cleanupInstance(username: string): void {
@@ -237,11 +251,21 @@ export class OpenChamberService {
   }
 
   private startHealthCheck(): void {
+    setTimeout(async () => {
+      for (const [username, instance] of this.instances) {
+        const isHealthy = await this.isInstanceHealthy(instance);
+        if (!isHealthy) {
+          console.log(`Instance for ${username} is unhealthy (status: ${instance.status}), cleaning up`);
+          this.cleanupInstance(username);
+        }
+      }
+    }, 5000);
+
     setInterval(async () => {
       for (const [username, instance] of this.instances) {
         const isHealthy = await this.isInstanceHealthy(instance);
         if (!isHealthy) {
-          console.log(`Instance for ${username} is unhealthy, cleaning up`);
+          console.log(`Instance for ${username} is unhealthy (status: ${instance.status}), cleaning up`);
           this.cleanupInstance(username);
         }
       }
