@@ -20,7 +20,9 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     software-properties-common \
     unzip \
-    && rm -rf /var/lib/apt/lists/*
+    vim
+    
+#    && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
     && apt-get install -y nodejs \
@@ -44,7 +46,7 @@ COPY . .
 RUN cd ui && npm run build
 RUN cd server && npm run build
 
-RUN mkdir -p /home/users
+RUN mkdir -p /home
 RUN mkdir -p /app/data
 
 COPY scripts/init-system.sh /usr/local/bin/
