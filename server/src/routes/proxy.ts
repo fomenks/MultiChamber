@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as http from 'http';
+import * as net from 'net';
 import { OpenChamberService } from '../services/openChamberService.js';
 import { UserService } from '../services/userService.js';
 import { JWTService } from '../services/jwtService.js';
@@ -501,7 +502,7 @@ export const handleWebSocketUpgrade = async (
     
     console.log(`[DEBUG WS] Proxying WebSocket to port ${port}`);
     
-    // Transform URL - remove /chamber prefix if present
+    // Transform URL - remove /chamber prefix or /api/terminal prefix if present
     let targetPath = request.url || '/';
     if (targetPath.startsWith('/chamber')) {
       targetPath = targetPath.substring('/chamber'.length) || '/';
@@ -510,24 +511,58 @@ export const handleWebSocketUpgrade = async (
     console.log(`[DEBUG WS] Original URL: ${request.url}, Target path: ${targetPath}`);
     
     // Create proxy connection
-    const proxySocket = new (require('net').Socket)();
+    const proxySocket = new net.Socket();
     
     proxySocket.connect(port, '127.0.0.1', () => {
       console.log(`[DEBUG WS] Connected to OpenChamber on port ${port}`);
       
-      // Write the upgrade request to the target
-      const headers = Object.entries(request.headers)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join('\r\n');
+      // Build headers for WebSocket upgrade - preserve original headers and add required ones
+      const upgradeHeader = request.headers['upgrade'] || 'websocket';
+      const connectionHeader = request.headers['connection'] || 'upgrade';
+      const secWebSocketKey = request.headers['sec-websocket-key'] || '';
+      const secWebSocketVersion = request.headers['sec-websocket-version'] || '13';
+      const secWebSocketProtocol = request.headers['sec-websocket-protocol'] || '';
+      const secWebSocketExtensions = request.headers['sec-websocket-extensions'] || '';
       
-      proxySocket.write(
-        `${request.method} ${targetPath} HTTP/1.1\r\n` +
-        `Host: 127.0.0.1:${port}\r\n` +
-        `X-MultiChamber-User: ${user.username}\r\n` +
-        `X-Forwarded-Prefix: /chamber\r\n` +
-        `${headers}\r\n\r\n`
-      );
+      let headerStr = `${request.method} ${targetPath} HTTP/1.1\r\n`;
+      headerStr += `Host: 127.0.0.1:${port}\r\n`;
+      headerStr += `X-MultiChamber-User: ${user.username}\r\n`;
+      headerStr += `X-Forwarded-Prefix: /chamber\r\n`;
+      headerStr += `Upgrade: ${upgradeHeader}\r\n`;
+      headerStr += `Connection: ${connectionHeader}\r\n`;
       
+      if (secWebSocketKey) {
+        headerStr += `Sec-WebSocket-Key: ${secWebSocketKey}\r\n`;
+      }
+      if (secWebSocketVersion) {
+        headerStr += `Sec-WebSocket-Version: ${secWebSocketVersion}\r\n`;
+      }
+      if (secWebSocketProtocol) {
+        headerStr += `Sec-WebSocket-Protocol: ${secWebSocketProtocol}\r\n`;
+      }
+      if (secWebSocketExtensions) {
+        headerStr += `Sec-WebSocket-Extensions: ${secWebSocketExtensions}\r\n`;
+      }
+      
+      // Add other headers from original request
+      for (const [key, value] of Object.entries(request.headers)) {
+        const lowerKey = key.toLowerCase();
+        if (lowerKey !== 'host' && 
+            lowerKey !== 'upgrade' && 
+            lowerKey !== 'connection' && 
+            lowerKey !== 'sec-websocket-key' &&
+            lowerKey !== 'sec-websocket-version' &&
+            lowerKey !== 'sec-websocket-protocol' &&
+            lowerKey !== 'sec-websocket-extensions' &&
+            lowerKey !== 'content-length' &&
+            value !== undefined) {
+          headerStr += `${key}: ${value}\r\n`;
+        }
+      }
+      
+      headerStr += `\r\n`;
+      
+      proxySocket.write(headerStr);
       proxySocket.write(head);
       
       // Pipe the sockets together
