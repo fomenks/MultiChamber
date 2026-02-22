@@ -121,21 +121,21 @@ export class OpenChamberService {
       ...process.env,
       HOME: user.homeDir,
       USER: user.username,
-      OPENCODE_PORT: port.toString(),
+      OPENCODE_PORT: '4096',
       OPENCODE_HOST: '127.0.0.1',
       FORCE_COLOR: '1',
       TERM: 'xterm-256color',
     };
 
-    const openchamberProcess = spawn('su', [
-      '-',
-      user.username,
-      '-c',
-      `node /usr/lib/node_modules/@openchamber/web/bin/cli.js`,
+    const openchamberProcess = spawn('node', [
+      '/usr/lib/node_modules/@openchamber/web/bin/cli.js',
+      'serve',
+      '-p',
+      port.toString(),
     ], {
       env,
       detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
 
     const instance: OpenChamberInstance = {
@@ -152,6 +152,14 @@ export class OpenChamberService {
 
     this.savePortMappings();
 
+    openchamberProcess.stdout?.on('data', (data) => {
+      console.log(`[${user.username}] ${data.toString().trim()}`);
+    });
+
+    openchamberProcess.stderr?.on('data', (data) => {
+      console.error(`[${user.username}] ${data.toString().trim()}`);
+    });
+
     await this.waitForOpenChamber(port);
     
     instance.status = 'running';
@@ -159,14 +167,6 @@ export class OpenChamberService {
     openchamberProcess.on('exit', (code) => {
       console.log(`OpenChamber for ${user.username} exited with code ${code}`);
       this.cleanupInstance(user.username);
-    });
-
-    openchamberProcess.stdout?.on('data', (data) => {
-      console.log(`[${user.username}] ${data.toString().trim()}`);
-    });
-
-    openchamberProcess.stderr?.on('data', (data) => {
-      console.error(`[${user.username}] ${data.toString().trim()}`);
     });
 
     return instance;
