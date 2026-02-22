@@ -12,6 +12,12 @@ fi
 
 USERNAME="$1"
 
+if [ ! -d /tmp/mc ] ; then 
+  echo "Making /tmp/mc dir"
+  mkdir /tmp/mc  
+  chmod a+rwx /tmp/mc 
+fi
+
 echo "Starting OpenChamber for user: $USERNAME" >&2
 
 # Get user ID from system using Python
@@ -21,7 +27,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-PID_FILE="/tmp/${USERNAME}_OC.pid"
+PID_FILE="/tmp/mc/${USERNAME}_OC.pid"
 PORT=$((10000 + USER_ID))
 
 echo "Calculated port: $PORT (UID: $USER_ID)" >&2
@@ -51,10 +57,7 @@ echo "Starting OpenChamber as user $USERNAME in directory $USER_HOME" >&2
 # Start OpenChamber as the user
 # Using full path to openchamber with daemon mode for proper backgrounding
 # Note: OpenChamber binds to 127.0.0.1 by default
-# Docker port mapping should work with -p host_port:container_port
-sudo -u "$USERNAME" /bin/bash -c "export PORT=${PORT} ; /usr/bin/tmux new-session -d -s OpenCode '/usr/local/bin/userOC.sh'"
-
+sudo -u "$USERNAME" /bin/bash -c "export PORT=${PORT} ; /usr/bin/tmux new-session -d -s OpenCode${USERNAME} '/usr/local/bin/userOC.sh'"
 # Create PID file
-echo "131313" > "$PID_FILE"
 echo "OpenChamber started successfully on port $PORT" >&2
 echo "$PORT"
