@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as http from 'http';
+import * as net from 'net';
 import { OpenChamberService } from '../services/openChamberService.js';
 import { UserService } from '../services/userService.js';
 import { JWTService } from '../services/jwtService.js';
@@ -61,7 +62,12 @@ const dynamicProxy = (req: ExpressRequest, res: Response, next: NextFunction) =>
   const port = (req as any).openChamberPort;
   const userInfo = (req as any).userInfo;
   
+  console.log(`[DEBUG PROXY] Request received: ${req.method} ${req.url}`);
+  console.log(`[DEBUG PROXY] User: ${userInfo?.username || 'unknown'}, Port: ${port || 'none'}`);
+  console.log(`[DEBUG PROXY] Headers:`, JSON.stringify(req.headers, null, 2));
+  
   if (!port) {
+    console.log(`[DEBUG PROXY] No port assigned, showing placeholder`);
     const placeholderHtml = `
 <!DOCTYPE html>
 <html>
@@ -108,25 +114,51 @@ const dynamicProxy = (req: ExpressRequest, res: Response, next: NextFunction) =>
     return;
   }
 
-  const targetPath = (req.url || '/').replace('/chamber', '') || '/';
+  // Correctly handle path transformation
+  const originalUrl = req.url || '/';
+  let targetPath = originalUrl;
+  
+  // Remove /chamber prefix
+  if (targetPath.startsWith('/chamber')) {
+    targetPath = targetPath.substring('/chamber'.length) || '/';
+  }
+  
   const targetHost = '127.0.0.1';
+  
+  console.log(`[DEBUG PROXY] Original URL: ${originalUrl}`);
+  console.log(`[DEBUG PROXY] Target path: ${targetPath}`);
+  console.log(`[DEBUG PROXY] Target: ${targetHost}:${port}`);
+  
+  // Prepare headers - remove Express-specific headers that might cause issues
+  const headers: any = {};
+  for (const [key, value] of Object.entries(req.headers)) {
+    // Skip Express internal headers and host (we'll set our own)
+    if (key !== 'host' && key !== 'content-length' && value !== undefined) {
+      headers[key] = value;
+    }
+  }
+  
+  headers['host'] = `${targetHost}:${port}`;
+  headers['X-MultiChamber-User'] = userInfo?.username || '';
+  headers['X-MultiChamber-Admin'] = userInfo?.isAdmin ? 'true' : 'false';
+  headers['X-Forwarded-Prefix'] = '/chamber';
+  headers['X-Forwarded-Uri'] = originalUrl;
+  
+  console.log(`[DEBUG PROXY] Outgoing headers:`, JSON.stringify(headers, null, 2));
   
   const options: http.RequestOptions = {
     hostname: targetHost,
     port: port,
     path: targetPath,
     method: req.method,
-    headers: {
-      ...req.headers,
-      host: `${targetHost}:${port}`,
-      'X-MultiChamber-User': userInfo?.username || '',
-      'X-MultiChamber-Admin': userInfo?.isAdmin ? 'true' : 'false',
-      'X-Forwarded-Prefix': '/chamber',
-      'X-Forwarded-Uri': targetPath,
-    },
+    headers: headers,
+    timeout: 60000,
   };
 
   const proxyReq = http.request(options, (proxyRes) => {
+    console.log(`[DEBUG PROXY] Response received: ${proxyRes.statusCode}`);
+    console.log(`[DEBUG PROXY] Response headers:`, JSON.stringify(proxyRes.headers, null, 2));
+    
     const contentType = proxyRes.headers['content-type'] || '';
     
     if (contentType.includes('text/html')) {
@@ -138,12 +170,17 @@ const dynamicProxy = (req: ExpressRequest, res: Response, next: NextFunction) =>
       
       proxyRes.on('end', () => {
         const body = Buffer.concat(chunks).toString('utf8');
-        const rewrittenBody = body
+        console.log(`[DEBUG PROXY] HTML body length: ${body.length}`);
+        
+        // Enhanced path rewriting
+        let rewrittenBody = body
           .replace(/(href=["'])\//g, '$1/chamber/')
           .replace(/(src=["'])\//g, '$1/chamber/')
           .replace(/(action=["'])\//g, '$1/chamber/')
           .replace(/(url\()\//g, '$1/chamber/')
-          .replace(/location\.origin/g, "'http://localhost:8080/chamber'");
+          .replace(/location\.origin/g, "'http://localhost:8080/chamber'")
+          // Handle relative URLs in CSS
+          .replace(/(url\s*\(\s*["']?)\//g, '$1/chamber/');
         
         const headers = { ...proxyRes.headers };
         delete headers['x-frame-options'];
@@ -152,29 +189,371 @@ const dynamicProxy = (req: ExpressRequest, res: Response, next: NextFunction) =>
           'content-length': Buffer.byteLength(rewrittenBody),
         });
         res.end(rewrittenBody);
+        console.log(`[DEBUG PROXY] HTML response sent`);
       });
     } else {
       const headers = { ...proxyRes.headers };
       delete headers['x-frame-options'];
       res.writeHead(proxyRes.statusCode || 200, headers);
       proxyRes.pipe(res);
+      console.log(`[DEBUG PROXY] Non-HTML response piped`);
     }
   });
 
   proxyReq.on('error', (err) => {
-    console.error('Proxy request error:', err.message);
+    console.error('[DEBUG PROXY] Proxy request error:', err.message);
+    console.error('[DEBUG PROXY] Error stack:', err.stack);
     if (!res.headersSent) {
-      res.status(502).json({ error: 'OpenChamber instance unavailable' });
+      res.status(502).json({ 
+        error: 'OpenChamber instance unavailable',
+        details: err.message,
+        port: port,
+        path: targetPath
+      });
     }
   });
 
-  // Handle request body - Express has already parsed it
+  proxyReq.on('timeout', () => {
+    console.error('[DEBUG PROXY] Request timeout');
+    proxyReq.destroy();
+    if (!res.headersSent) {
+      res.status(504).json({ error: 'Gateway timeout' });
+    }
+  });
+
+  // Handle request body properly
   if (req.body && Object.keys(req.body).length > 0) {
-    proxyReq.write(JSON.stringify(req.body));
+    console.log(`[DEBUG PROXY] Sending body:`, JSON.stringify(req.body).substring(0, 200));
+    
+    // Check content type to determine how to send body
+    const contentType = req.headers['content-type'] || '';
+    if (contentType.includes('application/json')) {
+      proxyReq.write(JSON.stringify(req.body));
+    } else if (contentType.includes('application/x-www-form-urlencoded')) {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(req.body)) {
+        params.append(key, String(value));
+      }
+      proxyReq.write(params.toString());
+    } else {
+      // For other types, try to send as-is if it's a string, or JSON if object
+      if (typeof req.body === 'string') {
+        proxyReq.write(req.body);
+      } else {
+        proxyReq.write(JSON.stringify(req.body));
+      }
+    }
   }
+  
   proxyReq.end();
+  console.log(`[DEBUG PROXY] Request sent to port ${port}`);
 };
+
+// Diagnostic endpoint - test if OpenChamber is accessible
+router.get('/__diagnostic', async (req: ExpressRequest, res: Response) => {
+  const userInfo = (req as any).userInfo || { username: 'unknown' };
+  const port = (req as any).openChamberPort;
+  
+  console.log(`[DEBUG DIAGNOSTIC] Diagnostic request for user: ${userInfo?.username}, port: ${port}`);
+  
+  if (!port) {
+    res.status(503).json({
+      status: 'error',
+      message: 'No OpenChamber instance available',
+      user: userInfo?.username,
+      port: null
+    });
+    return;
+  }
+  
+  // Try to connect directly to OpenChamber
+  const testOptions: http.RequestOptions = {
+    hostname: '127.0.0.1',
+    port: port,
+    path: '/',
+    method: 'GET',
+    timeout: 5000,
+  };
+  
+  const startTime = Date.now();
+  
+  const testReq = http.request(testOptions, (testRes) => {
+    const duration = Date.now() - startTime;
+    let body = '';
+    
+    testRes.on('data', (chunk) => {
+      body += chunk;
+    });
+    
+    testRes.on('end', () => {
+      res.json({
+        status: 'ok',
+        message: 'Direct connection to OpenChamber successful',
+        user: userInfo?.username,
+        port: port,
+        responseTime: `${duration}ms`,
+        openChamberStatus: testRes.statusCode,
+        openChamberHeaders: testRes.headers,
+        openChamberBodyPreview: body.substring(0, 500)
+      });
+    });
+  });
+  
+  testReq.on('error', (err) => {
+    const duration = Date.now() - startTime;
+    res.status(502).json({
+      status: 'error',
+      message: 'Cannot connect to OpenChamber',
+      user: userInfo?.username,
+      port: port,
+      responseTime: `${duration}ms`,
+      error: err.message,
+      errorCode: (err as any).code
+    });
+  });
+  
+  testReq.on('timeout', () => {
+    testReq.destroy();
+    res.status(504).json({
+      status: 'error',
+      message: 'Connection to OpenChamber timed out',
+      user: userInfo?.username,
+      port: port,
+      timeout: 5000
+    });
+  });
+  
+  testReq.end();
+});
 
 router.all('/*', validateUserProxy, dynamicProxy);
 
+// Create a separate router for API terminal proxy
+const apiTerminalRouter = Router();
+
+// API Terminal proxy - doesn't rewrite HTML, just forwards requests
+const apiTerminalProxy = (req: ExpressRequest, res: Response, next: NextFunction) => {
+  const port = (req as any).openChamberPort;
+  const userInfo = (req as any).userInfo;
+  
+  console.log(`[DEBUG API PROXY] Request received: ${req.method} ${req.url}`);
+  console.log(`[DEBUG API PROXY] User: ${userInfo?.username || 'unknown'}, Port: ${port || 'none'}`);
+  
+  if (!port) {
+    res.status(503).json({ error: 'OpenChamber instance not available' });
+    return;
+  }
+
+  // For API requests, Express strips the mount path, so we need to reconstruct full path
+  // req.url is relative to mount point (/api/terminal), so we prepend it back
+  const targetPath = '/api/terminal' + (req.url || '/');
+  const targetHost = '127.0.0.1';
+  
+  console.log(`[DEBUG API PROXY] Original req.url: ${req.url}`);
+  console.log(`[DEBUG API PROXY] Reconstructed target path: ${targetPath}`);
+  console.log(`[DEBUG API PROXY] Target: ${targetHost}:${port}`);
+  
+  // Prepare headers
+  const headers: any = {};
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (key !== 'host' && key !== 'content-length' && value !== undefined) {
+      headers[key] = value;
+    }
+  }
+  
+  headers['host'] = `${targetHost}:${port}`;
+  headers['X-MultiChamber-User'] = userInfo?.username || '';
+  headers['X-MultiChamber-Admin'] = userInfo?.isAdmin ? 'true' : 'false';
+  headers['X-Forwarded-Prefix'] = '/api/terminal';
+  headers['X-Forwarded-Uri'] = targetPath;
+  
+  const options: http.RequestOptions = {
+    hostname: targetHost,
+    port: port,
+    path: targetPath,
+    method: req.method,
+    headers: headers,
+    timeout: 60000,
+  };
+
+  const proxyReq = http.request(options, (proxyRes) => {
+    console.log(`[DEBUG API PROXY] Response received: ${proxyRes.statusCode}`);
+    
+    const headers = { ...proxyRes.headers };
+    delete headers['x-frame-options'];
+    res.writeHead(proxyRes.statusCode || 200, headers);
+    proxyRes.pipe(res);
+  });
+
+  proxyReq.on('error', (err) => {
+    console.error('[DEBUG API PROXY] Proxy request error:', err.message);
+    if (!res.headersSent) {
+      res.status(502).json({ 
+        error: 'OpenChamber instance unavailable',
+        details: err.message,
+        port: port,
+        path: targetPath
+      });
+    }
+  });
+
+  proxyReq.on('timeout', () => {
+    console.error('[DEBUG API PROXY] Request timeout');
+    proxyReq.destroy();
+    if (!res.headersSent) {
+      res.status(504).json({ error: 'Gateway timeout' });
+    }
+  });
+
+  // Handle request body
+  if (req.body && Object.keys(req.body).length > 0) {
+    const contentType = req.headers['content-type'] || '';
+    if (contentType.includes('application/json')) {
+      proxyReq.write(JSON.stringify(req.body));
+    } else if (contentType.includes('application/x-www-form-urlencoded')) {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(req.body)) {
+        params.append(key, String(value));
+      }
+      proxyReq.write(params.toString());
+    } else {
+      if (typeof req.body === 'string') {
+        proxyReq.write(req.body);
+      } else {
+        proxyReq.write(JSON.stringify(req.body));
+      }
+    }
+  }
+  
+  proxyReq.end();
+  console.log(`[DEBUG API PROXY] Request sent to port ${port}`);
+};
+
+apiTerminalRouter.all('/*', validateUserProxy, apiTerminalProxy);
+
+// WebSocket upgrade handler
+export const handleWebSocketUpgrade = async (
+  request: http.IncomingMessage,
+  socket: any,
+  head: Buffer,
+  server: http.Server
+) => {
+  console.log(`[DEBUG WS] Upgrade request received for: ${request.url}`);
+  
+  // Check if this is a chamber request or OpenChamber API request
+  const isChamberRequest = request.url?.startsWith('/chamber');
+  const isOpenChamberApiRequest = request.url?.startsWith('/api/terminal/');
+  
+  if (!isChamberRequest && !isOpenChamberApiRequest) {
+    console.log(`[DEBUG WS] Not a chamber or OpenChamber API request, skipping`);
+    return false;
+  }
+  
+  // Extract token from query string or cookies
+  const requestUrl = request.url || '/';
+  const url = new URL(requestUrl, `http://${request.headers.host}`);
+  let token = url.searchParams.get('token');
+  
+  if (!token && request.headers.cookie) {
+    const cookieMatch = request.headers.cookie.match(/token=([^;]+)/);
+    if (cookieMatch) {
+      token = cookieMatch[1];
+    }
+  }
+  
+  if (!token) {
+    console.log(`[DEBUG WS] No token found, rejecting WebSocket`);
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return true;
+  }
+  
+  const payload = JWTService.verifyToken(token);
+  if (!payload) {
+    console.log(`[DEBUG WS] Invalid token, rejecting WebSocket`);
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return true;
+  }
+  
+  const user = userService.getUser(payload.username);
+  if (!user) {
+    console.log(`[DEBUG WS] User not found, rejecting WebSocket`);
+    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+    socket.destroy();
+    return true;
+  }
+  
+  const userData = {
+    username: user.username,
+    homeDir: `/home/${user.username}`
+  };
+  
+  try {
+    const instance = await openChamberService.getOrStartInstance(userData as any);
+    const port = instance.port;
+    
+    if (!port) {
+      console.log(`[DEBUG WS] No port available for user ${user.username}`);
+      socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
+      socket.destroy();
+      return true;
+    }
+    
+    console.log(`[DEBUG WS] Proxying WebSocket to port ${port}`);
+    
+    // Transform URL - remove /chamber prefix if present
+    let targetPath = request.url || '/';
+    if (targetPath.startsWith('/chamber')) {
+      targetPath = targetPath.substring('/chamber'.length) || '/';
+    }
+    
+    console.log(`[DEBUG WS] Original URL: ${request.url}, Target path: ${targetPath}`);
+    
+    // Create proxy connection
+    const proxySocket = new net.Socket();
+    
+    proxySocket.connect(port, '127.0.0.1', () => {
+      console.log(`[DEBUG WS] Connected to OpenChamber on port ${port}`);
+      
+      // Write the upgrade request to the target
+      const headers = Object.entries(request.headers)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join('\r\n');
+      
+      proxySocket.write(
+        `${request.method} ${targetPath} HTTP/1.1\r\n` +
+        `Host: 127.0.0.1:${port}\r\n` +
+        `X-MultiChamber-User: ${user.username}\r\n` +
+        `X-Forwarded-Prefix: /chamber\r\n` +
+        `${headers}\r\n\r\n`
+      );
+      
+      proxySocket.write(head);
+      
+      // Pipe the sockets together
+      proxySocket.pipe(socket);
+      socket.pipe(proxySocket);
+    });
+    
+    proxySocket.on('error', (err: Error) => {
+      console.error(`[DEBUG WS] Proxy socket error:`, err.message);
+      socket.destroy();
+    });
+    
+    socket.on('error', (err: Error) => {
+      console.error(`[DEBUG WS] Client socket error:`, err.message);
+      proxySocket.destroy();
+    });
+    
+    return true;
+  } catch (error) {
+    console.error(`[DEBUG WS] Error handling upgrade:`, error);
+    socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+    socket.destroy();
+    return true;
+  }
+};
+
+export { apiTerminalRouter };
 export default router;

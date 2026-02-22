@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 import { authMiddleware } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
-import proxyRoutes from './routes/proxy.js';
+import proxyRoutes, { apiTerminalRouter, handleWebSocketUpgrade } from './routes/proxy.js';
 import { OpenChamberService } from './services/openChamberService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -67,6 +67,9 @@ app.use('/api/auth', authRoutes);
 
 app.use('/api/admin', authMiddleware, adminRoutes);
 
+// API Terminal proxy - forwards to OpenChamber instance
+app.use('/api/terminal', authMiddleware, apiTerminalRouter);
+
 app.use(express.static(path.join(__dirname, '../../ui/dist')));
 
 app.use('/chamber', proxyRoutes);
@@ -89,6 +92,16 @@ const openChamberService = new OpenChamberService();
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`MultiChamber server running on port ${PORT}`);
   console.log(`Environment: ${NODE_ENV}`);
+});
+
+// Handle WebSocket upgrades for chamber proxy
+server.on('upgrade', async (request, socket, head) => {
+  console.log(`[DEBUG SERVER] Upgrade event received for: ${request.url}`);
+  const handled = await handleWebSocketUpgrade(request, socket, head, server);
+  if (!handled) {
+    console.log(`[DEBUG SERVER] WebSocket not handled by chamber proxy`);
+    socket.destroy();
+  }
 });
 
 process.on('SIGTERM', () => {
