@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import * as http from 'http';
-import * as net from 'net';
 import { OpenChamberService } from '../services/openChamberService.js';
 import { UserService } from '../services/userService.js';
 import { JWTService } from '../services/jwtService.js';
@@ -153,6 +152,7 @@ const dynamicProxy = (req: ExpressRequest, res: Response, next: NextFunction) =>
     method: req.method,
     headers: headers,
     timeout: 60000,
+    family: 4, // Force IPv4
   };
 
   const proxyReq = http.request(options, (proxyRes) => {
@@ -344,13 +344,11 @@ const apiTerminalProxy = (req: ExpressRequest, res: Response, next: NextFunction
     return;
   }
 
-  // For API requests, Express strips the mount path, so we need to reconstruct full path
-  // req.url is relative to mount point (/api/terminal), so we prepend it back
-  const targetPath = '/api/terminal' + (req.url || '/');
+  // For API requests, pass URL as-is (already without /chamber prefix)
+  const targetPath = req.url || '/';
   const targetHost = '127.0.0.1';
   
-  console.log(`[DEBUG API PROXY] Original req.url: ${req.url}`);
-  console.log(`[DEBUG API PROXY] Reconstructed target path: ${targetPath}`);
+  console.log(`[DEBUG API PROXY] Target path: ${targetPath}`);
   console.log(`[DEBUG API PROXY] Target: ${targetHost}:${port}`);
   
   // Prepare headers
@@ -374,6 +372,7 @@ const apiTerminalProxy = (req: ExpressRequest, res: Response, next: NextFunction
     method: req.method,
     headers: headers,
     timeout: 60000,
+    family: 4, // Force IPv4
   };
 
   const proxyReq = http.request(options, (proxyRes) => {
@@ -511,7 +510,7 @@ export const handleWebSocketUpgrade = async (
     console.log(`[DEBUG WS] Original URL: ${request.url}, Target path: ${targetPath}`);
     
     // Create proxy connection
-    const proxySocket = new net.Socket();
+    const proxySocket = new (require('net').Socket)();
     
     proxySocket.connect(port, '127.0.0.1', () => {
       console.log(`[DEBUG WS] Connected to OpenChamber on port ${port}`);

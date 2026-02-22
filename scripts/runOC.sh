@@ -58,22 +58,6 @@ echo "Starting OpenChamber as user $USERNAME in directory $USER_HOME" >&2
 # Using full path to openchamber with daemon mode for proper backgrounding
 # Note: OpenChamber binds to 127.0.0.1 by default
 sudo -u "$USERNAME" /bin/bash -c "export PORT=${PORT} ; /usr/bin/tmux new-session -d -s OpenCode${USERNAME} '/usr/local/bin/userOC.sh'"
-
-# Wait for OpenChamber to actually start listening on the port
-echo "Waiting for OpenChamber to start on port $PORT..." >&2
-for i in {1..30}; do
-    if nc -z 127.0.0.1 $PORT 2>/dev/null; then
-        echo "OpenChamber is listening on port $PORT" >&2
-        echo "$PORT"
-        exit 0
-    fi
-    echo "Attempt $i/30: Port $PORT not ready yet, waiting..." >&2
-    sleep 1
-done
-
-echo "ERROR: OpenChamber failed to start on port $PORT within 30 seconds" >&2
-echo "Checking tmux session..." >&2
-/usr/bin/tmux list-sessions 2>&1 | grep "OpenCode${USERNAME}" >&2 || echo "No tmux session found" >&2
-echo "Checking process..." >&2
-ps aux | grep -i openchamber | grep -v grep >&2 || echo "No openchamber process found" >&2
-exit 1
+# Create PID file
+echo "OpenChamber started successfully on port $PORT" >&2
+echo "$PORT"

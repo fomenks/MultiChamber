@@ -78,10 +78,10 @@ export class OpenChamberService {
 
   private isInstanceHealthy(instance: OpenChamberInstance): Promise<boolean> {
     const port = instance.port;
-    console.log(`[DIAG] Health check for OpenChamber instance on port ${port}`);
+    console.log(`Health check for OpenChamber instance on port ${port}`);
 
     if (instance.status === 'starting') {
-      console.log(`[DIAG] Instance on port ${port} is still starting`);
+      console.log(`Instance on port ${port} is still starting`);
       return Promise.resolve(false);
     }
 
@@ -90,23 +90,22 @@ export class OpenChamberService {
       socket.setTimeout(5000);
       
       socket.on('connect', () => {
-        console.log(`[DIAG] Health check PASSED for port ${port}`);
+        console.log(`Health check passed for port ${port}`);
         socket.destroy();
         resolve(true);
       });
       
       socket.on('error', (err) => {
-        console.log(`[DIAG] Health check FAILED for port ${port}: ${(err as Error).message}`);
+        console.log(`Health check failed for port ${port}: ${(err as Error).message}`);
         resolve(false);
       });
       
       socket.on('timeout', () => {
-        console.log(`[DIAG] Health check TIMEOUT for port ${port}`);
+        console.log(`Health check timed out for port ${port}`);
         socket.destroy();
         resolve(false);
       });
       
-      console.log(`[DIAG] Attempting connection to 127.0.0.1:${port}`);
       socket.connect(port, '127.0.0.1');
     });
   }
@@ -143,64 +142,32 @@ export class OpenChamberService {
   private async startInstanceUsingScript(user: User): Promise<number> {
     try {
       const username = user.username;
-      console.log(`[DIAG] Starting OpenChamber for user ${username} using runOC.sh`);
+      console.log(`Starting OpenChamber for user ${username} using runOC.sh`);
       
-      let result: string;
-      try {
-        result = execSync(`/usr/local/bin/runOC.sh ${username}`, { 
-          encoding: 'utf-8',
-          stdio: ['pipe', 'pipe', 'pipe']
-        });
-        console.log(`[DIAG] runOC.sh output:\n${result}`);
-      } catch (execError: any) {
-        console.error(`[DIAG] runOC.sh failed with error:\n${execError.stderr || execError.message}`);
-        console.error(`[DIAG] runOC.sh stdout:\n${execError.stdout || 'no stdout'}`);
-        throw execError;
-      }
+      const result = execSync(`/usr/local/bin/runOC.sh ${username}`, { 
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe']
+      });
       
       // Extract port from the last line of output
       const lines = result.trim().split('\n');
       const port = parseInt(lines[lines.length - 1].trim(), 10);
       
       if (isNaN(port) || port < MIN_PORT || port > MAX_PORT) {
-        console.error(`[DIAG] Failed to parse port from output. Full output:\n${result}`);
+        console.error(`Failed to parse port from output. Full output:\n${result}`);
         throw new Error(`Invalid port returned: ${port}`);
       }
 
-      console.log(`[DIAG] runOC.sh returned port ${port} for ${username}`);
-      
-      // Check if process is actually listening
-      const netstatResult = execSync(`netstat -tlnp 2>/dev/null | grep ${port} || ss -tlnp 2>/dev/null | grep ${port} || echo "Port ${port} not found in netstat/ss"`, {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
-      console.log(`[DIAG] Port ${port} status: ${netstatResult.trim()}`);
+      console.log(`Started OpenChamber instance for ${username} on port ${port}`);
 
       const portReady = await this.waitForPortReady(port, 30000);
       if (!portReady) {
-        console.error(`[DIAG] Port ${port} did not become ready. Checking process status...`);
-        try {
-          const psResult = execSync(`ps aux | grep -i openchamber | grep -v grep || echo "No openchamber processes"`, {
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'pipe']
-          });
-          console.log(`[DIAG] Process status:\n${psResult}`);
-          
-          const tmuxResult = execSync(`tmux list-sessions 2>&1 || echo "No tmux sessions"`, {
-            encoding: 'utf-8',
-            stdio: ['pipe', 'pipe', 'pipe']
-          });
-          console.log(`[DIAG] Tmux sessions:\n${tmuxResult}`);
-        } catch (e) {
-          console.error(`[DIAG] Failed to check process status: ${e}`);
-        }
         throw new Error(`Port ${port} did not become ready within 30 seconds`);
       }
 
-      console.log(`[DIAG] OpenChamber for ${username} is ready on port ${port}`);
       return port;
     } catch (error) {
-      console.error(`[DIAG] Failed to start OpenChamber for ${user.username}:`, error);
+      console.error(`Failed to start OpenChamber for ${user.username}:`, error);
       throw new Error(`Failed to start OpenChamber instance: ${(error as Error).message}`);
     }
   }
