@@ -33,15 +33,15 @@ const app = express();
 const isProduction = NODE_ENV === 'production';
 
 app.use(helmet({
-  contentSecurityPolicy: isProduction,
-  hsts: isProduction,
-  originAgentCluster: isProduction,
-  crossOriginEmbedderPolicy: isProduction,
-  crossOriginOpenerPolicy: isProduction,
-  crossOriginResourcePolicy: isProduction,
-  referrerPolicy: isProduction,
-  xFrameOptions: isProduction,
-  xContentTypeOptions: isProduction,
+  contentSecurityPolicy: false,
+  hsts: false,
+  originAgentCluster: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: false,
+  crossOriginResourcePolicy: false,
+  referrerPolicy: false,
+  xFrameOptions: false,
+  xContentTypeOptions: false,
 }));
 
 app.use(cors({

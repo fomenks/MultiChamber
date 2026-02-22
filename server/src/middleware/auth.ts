@@ -16,7 +16,7 @@ declare global {
 const userService = new UserService();
 
 export const authMiddleware = (req: Request, res: Response, next: NextFunction): void => {
-  // Skip auth for login, health, static files, and root
+  // Skip auth for login, health, static files, chamber proxy, and root
   const publicPaths = [
     '/api/auth/login',
     '/health',

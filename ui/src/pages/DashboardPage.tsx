@@ -9,7 +9,7 @@ export function DashboardPage() {
   const [iframeLoaded, setIframeLoaded] = useState(false)
   const [iframeError, setIframeError] = useState(false)
 
-  const openChamberUrl = `/chamber`
+  const openChamberUrl = `/chamber/`
 
   return (
     <div className="space-y-6">

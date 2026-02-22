@@ -135,16 +135,20 @@ const dynamicProxy = (req: ExpressRequest, res: Response, next: NextFunction) =>
           .replace(/(src=["'])\//g, '$1/chamber/')
           .replace(/(action=["'])\//g, '$1/chamber/')
           .replace(/(url\()\//g, '$1/chamber/')
-          .replace(/location\.origin/g, "location.origin + '/chamber'");
+          .replace(/location\.origin/g, "'http://localhost:8080/chamber'");
         
+        const headers = { ...proxyRes.headers };
+        delete headers['x-frame-options'];
         res.writeHead(proxyRes.statusCode || 200, {
-          ...proxyRes.headers,
+          ...headers,
           'content-length': Buffer.byteLength(rewrittenBody),
         });
         res.end(rewrittenBody);
       });
     } else {
-      res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
+      const headers = { ...proxyRes.headers };
+      delete headers['x-frame-options'];
+      res.writeHead(proxyRes.statusCode || 200, headers);
       proxyRes.pipe(res);
     }
   });

@@ -19,7 +19,20 @@ export default defineConfig({
       '/chamber': {
         target: 'http://localhost:8080',
         changeOrigin: true,
-        ws: true,
+        secure: false,
+        cookieDomainRewrite: 'localhost',
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            const token = localStorage.getItem('multichamber_token');
+            if (token) {
+              proxyReq.setHeader('Authorization', `Bearer ${token}`);
+            }
+            const cookie = localStorage.getItem('multichamber_token');
+            if (cookie) {
+              proxyReq.setHeader('Cookie', `token=${cookie}`);
+            }
+          });
+        },
       },
     },
   },
