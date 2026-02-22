@@ -52,6 +52,9 @@ RUN mkdir -p /app/data
 COPY scripts/init-system.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/init-system.sh
 
+COPY scripts/runOC.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/runOC.sh
+
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
