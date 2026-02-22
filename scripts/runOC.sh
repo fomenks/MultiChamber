@@ -52,7 +52,7 @@ echo "Starting OpenChamber as user $USERNAME in directory $USER_HOME" >&2
 # Using full path to openchamber with daemon mode for proper backgrounding
 # Note: OpenChamber binds to 127.0.0.1 by default
 # Docker port mapping should work with -p host_port:container_port
-sudo -u "$USERNAME" /bin/bash -c "/usr/bin/tmux new-session -d -s OpenCode '/usr/local/bin/userOC.sh'"
+sudo -u "$USERNAME" /bin/bash -c "export PORT=${PORT} ; /usr/bin/tmux new-session -d -s OpenCode '/usr/local/bin/userOC.sh'"
 
 # Create PID file
 echo "131313" > "$PID_FILE"
