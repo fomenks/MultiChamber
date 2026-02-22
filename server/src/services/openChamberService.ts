@@ -48,7 +48,6 @@ export class OpenChamberService {
   private async findAvailablePort(): Promise<number> {
     for (let port = MIN_PORT; port <= MAX_PORT; port++) {
       if (!this.portToUser.has(port)) {
-        // Check if port is actually available
         const isAvailable = await this.checkPortAvailable(port);
         if (isAvailable) {
           return port;
@@ -69,31 +68,27 @@ export class OpenChamberService {
   }
 
   async getOrStartInstance(user: User): Promise<OpenChamberInstance> {
-    // Use the existing global OpenChamber instance on port 3000
-    const existingPort = 3000;
+    const existingInstance = this.instances.get(user.username);
     
-    const instance: OpenChamberInstance = {
-      port: existingPort,
-      pid: 0,
-      username: user.username,
-      startTime: new Date(),
-      status: 'running',
-    };
+    if (existingInstance && existingInstance.status === 'running') {
+      const isHealthy = await this.isInstanceHealthy(existingInstance);
+      if (isHealthy) {
+        return existingInstance;
+      }
+    }
 
-    return instance;
+    return await this.startInstance(user);
   }
 
   private async isInstanceHealthy(instance: OpenChamberInstance): Promise<boolean> {
-    // Check if process is still running
     if (instance.pid) {
       try {
-        process.kill(instance.pid, 0); // Check if process exists
+        process.kill(instance.pid, 0);
       } catch {
         return false;
       }
     }
 
-    // Check if port responds
     return new Promise((resolve) => {
       const socket = new net.Socket();
       socket.setTimeout(1000);
@@ -120,10 +115,8 @@ export class OpenChamberService {
     const port = await this.findAvailablePort();
     const workspaceDir = path.join(user.homeDir, 'workspace');
     
-    // Ensure workspace exists
     fs.mkdirSync(workspaceDir, { recursive: true });
 
-    // Set up environment for OpenChamber
     const env = {
       ...process.env,
       HOME: user.homeDir,
@@ -134,7 +127,6 @@ export class OpenChamberService {
       TERM: 'xterm-256color',
     };
 
-    // Start OpenChamber process as the user
     const openchamberProcess = spawn('su', [
       '-',
       user.username,
@@ -158,21 +150,17 @@ export class OpenChamberService {
     this.portToUser.set(port, user.username);
     this.processes.set(user.username, openchamberProcess);
 
-    // Save port mapping
     this.savePortMappings();
 
-    // Wait for OpenChamber to be ready
     await this.waitForOpenChamber(port);
     
     instance.status = 'running';
 
-    // Handle process exit
     openchamberProcess.on('exit', (code) => {
       console.log(`OpenChamber for ${user.username} exited with code ${code}`);
       this.cleanupInstance(user.username);
     });
 
-    // Log output for debugging
     openchamberProcess.stdout?.on('data', (data) => {
       console.log(`[${user.username}] ${data.toString().trim()}`);
     });
@@ -207,7 +195,6 @@ export class OpenChamberService {
       });
 
       if (isReady) {
-        // Give it a bit more time to fully initialize
         await new Promise(resolve => setTimeout(resolve, 1000));
         return;
       }
@@ -232,7 +219,6 @@ export class OpenChamberService {
     const process = this.processes.get(username);
     if (process) {
       process.kill('SIGTERM');
-      // Force kill after 10 seconds
       setTimeout(() => {
         if (!process.killed) {
           process.kill('SIGKILL');
@@ -251,7 +237,6 @@ export class OpenChamberService {
   }
 
   private startHealthCheck(): void {
-    // Check instance health every 30 seconds
     setInterval(async () => {
       for (const [username, instance] of this.instances) {
         const isHealthy = await this.isInstanceHealthy(instance);

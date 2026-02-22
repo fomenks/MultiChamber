@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+
+# Lock files
+package-lock.json
+
+# Logs
+*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

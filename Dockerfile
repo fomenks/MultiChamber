@@ -37,7 +37,7 @@ COPY package*.json ./
 
 RUN cd server && npm install
 RUN cd ui && npm install
-RUN npm install
+RUN npm install --save-dev tsx typescript @types/node
 
 COPY . .
 
@@ -45,11 +45,12 @@ RUN cd ui && npm run build
 RUN cd server && npm run build
 
 RUN mkdir -p /home/users
+RUN mkdir -p /app/data
 
 COPY scripts/init-system.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/init-system.sh
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 CMD ["/usr/local/bin/init-system.sh"]
