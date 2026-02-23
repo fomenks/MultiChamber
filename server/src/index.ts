@@ -72,6 +72,17 @@ app.use('/mc13/api/terminal', authMiddleware, apiTerminalRouter);
 
 app.use('/mc13', express.static(path.join(__dirname, '../../ui/dist')));
 
+app.use((req, res, next) => {
+  if (req.path === '/') {
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.cookies?.token;
+    if (!token) {
+      res.redirect('/mc13');
+      return;
+    }
+  }
+  next();
+});
+
 app.use('/', proxyRoutes);
 
 app.use(authMiddleware);
