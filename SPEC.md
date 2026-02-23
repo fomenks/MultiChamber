@@ -145,8 +145,8 @@ React-приложение на TypeScript с:
 - Очистка маппинга портов
 
 #### Проксирование
-- Маршрут `/chamber/*` проксирует к экземпляру пользователя
-- Перезапись URL в HTML-ответах (добавление префикса /chamber)
+- Маршрут `/*` проксирует к экземпляру пользователя
+- Перезапись URL в HTML-ответах
 - Передача заголовков X-MultiChamber-User и X-MultiChamber-Admin
 
 ### 3.4 Панель администратора
@@ -291,7 +291,7 @@ MultiChamber/
 
 ### 5.1 Аутентификация
 
-#### POST /api/auth/login
+#### POST /mc13/api/auth/login
 Вход пользователя в систему.
 
 **Request Body:**
@@ -315,7 +315,7 @@ MultiChamber/
 }
 ```
 
-#### POST /api/auth/logout
+#### POST /mc13/api/auth/logout
 Выход пользователя из системы.
 
 **Response:**
@@ -325,7 +325,7 @@ MultiChamber/
 }
 ```
 
-#### GET /api/auth/me
+#### GET /mc13/api/auth/me
 Получение информации о текущем пользователе.
 
 **Response:**
@@ -340,7 +340,7 @@ MultiChamber/
 }
 ```
 
-#### POST /api/auth/change-password
+#### POST /mc13/api/auth/change-password
 Изменение пароля текущего пользователя.
 
 **Request Body:**
@@ -360,7 +360,7 @@ MultiChamber/
 
 ### 5.2 Управление пользователями (только админ)
 
-#### GET /api/auth/users
+#### GET /mc13/api/auth/users
 Получение списка всех пользователей.
 
 **Response:**
@@ -377,7 +377,7 @@ MultiChamber/
 }
 ```
 
-#### POST /api/auth/users
+#### POST /mc13/api/auth/users
 Создание нового пользователя.
 
 **Request Body:**
@@ -400,7 +400,7 @@ MultiChamber/
 }
 ```
 
-#### DELETE /api/auth/users/:username
+#### DELETE /mc13/api/auth/users/:username
 Удаление пользователя.
 
 **Response:**
@@ -412,7 +412,7 @@ MultiChamber/
 
 ### 5.3 Администрирование
 
-#### GET /api/admin/status
+#### GET /mc13/api/admin/status
 Получение статуса системы.
 
 **Response:**
@@ -458,7 +458,7 @@ MultiChamber/
 }
 ```
 
-#### POST /api/admin/restart-instance/:username
+#### POST /mc13/api/admin/restart-instance/:username
 Перезапуск экземпляра OpenChamber для пользователя.
 
 **Response:**
@@ -474,7 +474,7 @@ MultiChamber/
 }
 ```
 
-#### POST /api/admin/stop-instance/:username
+#### POST /mc13/api/admin/stop-instance/:username
 Остановка экземпляра OpenChamber для пользователя.
 
 **Response:**
@@ -486,7 +486,7 @@ MultiChamber/
 
 ### 5.4 Прокси
 
-#### GET /chamber/*
+#### GET /*
 Проксирование запросов к экземпляру OpenChamber пользователя.
 
 Требует аутентификации через JWT-токен.
@@ -637,7 +637,15 @@ MultiChamber/
 | 8080 | MultiChamber HTTP server |
 | 10000-20000 | OpenChamber instances |
 
-### 9.3 Docker Compose конфигурация
+### 9.3 Базовый путь
+
+| Путь | Назначение |
+|------|------------|
+| /mc13/* | Статические файлы проекта (UI) |
+| /mc13/api/* | API endpoints |
+| /* | Прокси к OpenChamber |
+
+### 9.4 Docker Compose конфигурация
 
 ```yaml
 services:
@@ -662,8 +670,8 @@ services:
           memory: 8G
 ```
 
-### 9.4健康检查
-- Endpoint: /health
+### 9.5 health
+- Endpoint: /mc13/health
 - Интервал: 30 секунд
 - Таймаут: 10 секунд
 - Повторные попытки: 3
