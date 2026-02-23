@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import axios from 'axios'
 import type { AdminState, User } from '@/types'
 
-const API_URL = '/api'
+const API_URL = '/mc13/api'
 
 const api = axios.create({
   baseURL: API_URL,

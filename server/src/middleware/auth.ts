@@ -18,14 +18,16 @@ const userService = new UserService();
 export const authMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   // Skip auth for login, health, static files, chamber proxy, and root
   const publicPaths = [
-    '/api/auth/login',
-    '/health',
-    '/',
+    '/mc13/api/auth/login',
+    '/mc13/health',
+    '/mc13',
+    '/mc13/',
   ];
   
   // Skip auth for static files (assets, vite.svg, favicon, etc.)
   if (
     publicPaths.includes(req.path) ||
+    req.path.startsWith('/mc13/assets/') ||
     req.path.startsWith('/assets/') ||
     req.path.endsWith('.svg') ||
     req.path.endsWith('.png') ||

@@ -58,6 +58,6 @@ COPY scripts/userOC.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/userOC.sh
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f http://localhost:8080/mc13/health || exit 1
 
 CMD ["/usr/local/bin/init-system.sh"]

@@ -54,7 +54,7 @@ app.use(limiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(cookieParser());
 
-app.get('/health', (req, res) => {
+app.get('/mc13/health', (req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -62,19 +62,23 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth', authRoutes);
+app.use('/mc13/api/auth/login', authLimiter);
+app.use('/mc13/api/auth', authRoutes);
 
-app.use('/api/admin', authMiddleware, adminRoutes);
+app.use('/mc13/api/admin', authMiddleware, adminRoutes);
 
 // API Terminal proxy - forwards to OpenChamber instance
-app.use('/api/terminal', authMiddleware, apiTerminalRouter);
+app.use('/mc13/api/terminal', authMiddleware, apiTerminalRouter);
 
-app.use(express.static(path.join(__dirname, '../../ui/dist')));
+app.use('/mc13', express.static(path.join(__dirname, '../../ui/dist')));
 
-app.use('/chamber', proxyRoutes);
+app.use('/mc13/chamber', proxyRoutes);
 
 app.use(authMiddleware);
+
+app.get('/mc13', (req, res) => {
+  res.sendFile(path.join(__dirname, '../../ui/dist/index.html'));
+});
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../../ui/dist/index.html'));

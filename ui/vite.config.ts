@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import path from 'path'
 
 export default defineConfig({
+  base: '/mc13/',
   plugins: [react()],
   resolve: {
     alias: {
@@ -12,11 +13,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': {
+      '/mc13/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      '/chamber': {
+      '/mc13/chamber': {
         target: 'http://localhost:8080',
         changeOrigin: true,
         secure: false,

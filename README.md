@@ -142,23 +142,23 @@ MultiChamber/
 ## API Endpoints
 
 ### Authentication
-- `POST /api/auth/login` - User login
-- `POST /api/auth/logout` - User logout
-- `GET /api/auth/me` - Get current user info
-- `POST /api/auth/change-password` - Change password
+- `POST /mc13/api/auth/login` - User login
+- `POST /mc13/api/auth/logout` - User logout
+- `GET /mc13/api/auth/me` - Get current user info
+- `POST /mc13/api/auth/change-password` - Change password
 
 ### User Management (Admin only)
-- `GET /api/auth/users` - List all users
-- `POST /api/auth/users` - Create new user
-- `DELETE /api/auth/users/:username` - Delete user
+- `GET /mc13/api/auth/users` - List all users
+- `POST /mc13/api/auth/users` - Create new user
+- `DELETE /mc13/api/auth/users/:username` - Delete user
 
 ### Admin
-- `GET /api/admin/status` - System status
-- `POST /api/admin/restart-instance/:username` - Restart user's OpenChamber
-- `POST /api/admin/stop-instance/:username` - Stop user's OpenChamber
+- `GET /mc13/api/admin/status` - System status
+- `POST /mc13/api/admin/restart-instance/:username` - Restart user's OpenChamber
+- `POST /mc13/api/admin/stop-instance/:username` - Stop user's OpenChamber
 
 ### Proxy
-- `GET /chamber/*` - Proxy to user's OpenChamber instance
+- `GET /mc13/chamber/*` - Proxy to user's OpenChamber instance
 
 ## Security Considerations
 
