@@ -128,17 +128,13 @@ const dynamicProxy = (req: ExpressRequest, res: Response, next: NextFunction) =>
   // Prepare headers - remove Express-specific headers that might cause issues
   const headers: any = {};
   for (const [key, value] of Object.entries(req.headers)) {
-    // Skip Express internal headers and host (we'll set our own)
-    if (key !== 'host' && key !== 'content-length' && value !== undefined) {
+    // Skip Express internal headers, host, and authorization (MultiChamber handles auth)
+    if (key !== 'host' && key !== 'content-length' && key !== 'authorization' && value !== undefined) {
       headers[key] = value;
     }
   }
   
   headers['host'] = `${targetHost}:${port}`;
-  headers['X-MultiChamber-User'] = userInfo?.username || '';
-  headers['X-MultiChamber-Admin'] = userInfo?.isAdmin ? 'true' : 'false';
-  headers['X-Forwarded-Prefix'] = '';
-  headers['X-Forwarded-Uri'] = originalUrl;
   
   console.log(`[DEBUG PROXY] Outgoing headers:`, JSON.stringify(headers, null, 2));
   
@@ -341,19 +337,15 @@ const apiTerminalProxy = (req: ExpressRequest, res: Response, next: NextFunction
   console.log(`[DEBUG API PROXY] Target path: ${targetPath}`);
   console.log(`[DEBUG API PROXY] Target: ${targetHost}:${port}`);
   
-  // Prepare headers
+  // Prepare headers - remove authorization (MultiChamber handles auth)
   const headers: any = {};
   for (const [key, value] of Object.entries(req.headers)) {
-    if (key !== 'host' && key !== 'content-length' && value !== undefined) {
+    if (key !== 'host' && key !== 'content-length' && key !== 'authorization' && value !== undefined) {
       headers[key] = value;
     }
   }
   
   headers['host'] = `${targetHost}:${port}`;
-  headers['X-MultiChamber-User'] = userInfo?.username || '';
-  headers['X-MultiChamber-Admin'] = userInfo?.isAdmin ? 'true' : 'false';
-  headers['X-Forwarded-Prefix'] = '/mc13/api/terminal';
-  headers['X-Forwarded-Uri'] = targetPath;
   
   const options: http.RequestOptions = {
     hostname: targetHost,
@@ -511,8 +503,6 @@ export const handleWebSocketUpgrade = async (
       
       let headerStr = `${request.method} ${targetPath} HTTP/1.1\r\n`;
       headerStr += `Host: 127.0.0.1:${port}\r\n`;
-      headerStr += `X-MultiChamber-User: ${user.username}\r\n`;
-      headerStr += `X-Forwarded-Prefix: \r\n`;
       headerStr += `Upgrade: ${upgradeHeader}\r\n`;
       headerStr += `Connection: ${connectionHeader}\r\n`;
       
@@ -529,7 +519,7 @@ export const handleWebSocketUpgrade = async (
         headerStr += `Sec-WebSocket-Extensions: ${secWebSocketExtensions}\r\n`;
       }
       
-      // Add other headers from original request
+      // Add other headers from original request (exclude authorization - MultiChamber handles auth)
       for (const [key, value] of Object.entries(request.headers)) {
         const lowerKey = key.toLowerCase();
         if (lowerKey !== 'host' && 
@@ -540,6 +530,7 @@ export const handleWebSocketUpgrade = async (
             lowerKey !== 'sec-websocket-protocol' &&
             lowerKey !== 'sec-websocket-extensions' &&
             lowerKey !== 'content-length' &&
+            lowerKey !== 'authorization' &&
             value !== undefined) {
           headerStr += `${key}: ${value}\r\n`;
         }
