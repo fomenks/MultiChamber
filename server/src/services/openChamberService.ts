@@ -45,17 +45,33 @@ export class OpenChamberService {
   }
 
   async getOrStartInstance(user: User): Promise<OpenChamberInstance> {
+    console.log(`\n========== [DEBUG OC] getOrStartInstance started ==========`);  
+    console.log(`[DEBUG OC] Timestamp: ${new Date().toISOString()}`);
+    console.log(`[DEBUG OC] User: ${user.username}`);
+    
     const existingInstance = this.instances.get(user.username);
     
-     if (existingInstance && existingInstance.status === 'running') {
-       const isHealthy = await this.isInstanceHealthy(existingInstance);
-       if (isHealthy) {
-         return existingInstance;
-       }
-     }
+    if (existingInstance) {
+      console.log(`[DEBUG OC] Existing instance found - status: ${existingInstance.status}, port: ${existingInstance.port}`);
+    } else {
+      console.log(`[DEBUG OC] No existing instance found for ${user.username}`);
+    }
+    
+    if (existingInstance && existingInstance.status === 'running') {
+      console.log(`[DEBUG OC] Checking health of existing instance...`);
+      const isHealthy = await this.isInstanceHealthy(existingInstance);
+      if (isHealthy) {
+        console.log(`[DEBUG OC] Existing instance is healthy, returning it`);
+        console.log(`========== [DEBUG OC] getOrStartInstance completed ==========\n`);
+        return existingInstance;
+      } else {
+        console.log(`[DEBUG OC] Existing instance is not healthy, restarting...`);
+      }
+    }
 
     const username = user.username;
     
+    console.log(`[DEBUG OC] Starting new instance for ${username}...`);
     const port = await this.startInstanceUsingScript(user);
     
     const instance: OpenChamberInstance = {
@@ -73,6 +89,8 @@ export class OpenChamberService {
 
     console.log(`OpenChamber instance for ${username} is now running on port ${port}`);
 
+    console.log(`[DEBUG OC] Instance created: port=${port}, pid=${instance.pid}`);
+    console.log(`========== [DEBUG OC] getOrStartInstance completed ==========\n`);
     return instance;
   }
 
@@ -90,22 +108,23 @@ export class OpenChamberService {
       socket.setTimeout(5000);
       
       socket.on('connect', () => {
-        console.log(`Health check passed for port ${port}`);
+        console.log(`[DEBUG OC] Health check passed for port ${port}`);
         socket.destroy();
         resolve(true);
       });
       
       socket.on('error', (err) => {
-        console.log(`Health check failed for port ${port}: ${(err as Error).message}`);
+        console.log(`[DEBUG OC] Health check failed for port ${port}: ${(err as Error).message}`);
         resolve(false);
       });
       
       socket.on('timeout', () => {
-        console.log(`Health check timed out for port ${port}`);
+        console.log(`[DEBUG OC] Health check timed out for port ${port}`);
         socket.destroy();
         resolve(false);
       });
       
+      console.log(`[DEBUG OC] Connecting to port ${port} for health check...`);
       socket.connect(port, '127.0.0.1');
     });
   }
@@ -119,17 +138,20 @@ export class OpenChamberService {
       }, 1000);
       
       socket.on('connect', () => {
+        console.log(`[DEBUG OC] Port ${port} is in use (connected)`);
         clearTimeout(timeout);
         socket.destroy();
         resolve(true); // Connected = port in use
       });
       
       socket.on('error', () => {
+        console.log(`[DEBUG OC] Port ${port} is not in use (error)`);
         clearTimeout(timeout);
         socket.destroy();
         resolve(false); // Error = port not in use
       });
       
+      console.log(`[DEBUG OC] Testing if port ${port} is in use...`);
       socket.connect(port, '127.0.0.1');
     });
   }
@@ -141,15 +163,15 @@ export class OpenChamberService {
     while (Date.now() - startTime < timeoutMs) {
       const inUse = await this.isPortInUse(port);
       if (inUse) {
-        console.log(`Port ${port} is now in use (ready)`);
+        console.log(`[DEBUG OC] Port ${port} is now in use (ready)`);
         return true;
       } else {
-        console.log(`Port ${port} is not in use, waiting...`);
+        console.log(`[DEBUG OC] Port ${port} is not in use, waiting... (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
       }
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
     
-    console.error(`Timeout waiting for port ${port} to be ready after ${timeoutMs}ms`);
+    console.error(`[DEBUG OC] Timeout waiting for port ${port} to be ready after ${timeoutMs}ms`);
     return false;
   }
 
@@ -163,16 +185,21 @@ export class OpenChamberService {
         stdio: ['pipe', 'pipe', 'pipe']
       });
       
+      console.log(`[DEBUG OC] Script execution complete, parsing output...`);
+      console.log(`[DEBUG OC] Full script output:\n${result}`);
+      
       // Extract port from the last line of output
       const lines = result.trim().split('\n');
       const port = parseInt(lines[lines.length - 1].trim(), 10);
       
+      console.log(`[DEBUG OC] Last line: "${lines[lines.length - 1].trim()}", parsed port: ${port}`);
+      
       if (isNaN(port) || port < MIN_PORT || port > MAX_PORT) {
-        console.error(`Failed to parse port from output. Full output:\n${result}`);
+        console.error(`[DEBUG OC] Failed to parse port from output. Full output:\n${result}`);
         throw new Error(`Invalid port returned: ${port}`);
       }
 
-      console.log(`Started OpenChamber instance for ${username} on port ${port}`);
+      console.log(`[DEBUG OC] Started OpenChamber instance for ${username} on port ${port}`);
 
       const portReady = await this.waitForPortReady(port, 30000);
       if (!portReady) {

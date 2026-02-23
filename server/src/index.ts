@@ -68,11 +68,19 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', authMiddleware, adminRoutes);
 
 // API Terminal proxy - forwards to OpenChamber instance
-app.use('/api/terminal', authMiddleware, apiTerminalRouter);
+app.use('/api/terminal', authMiddleware, (req, res, next) => {
+  console.log(`\n========== [DEBUG APP] API Terminal route started ==========`);  
+  console.log(`[DEBUG APP] Request: ${req.method} ${req.url}`);
+  next();
+}, apiTerminalRouter);
 
 app.use(express.static(path.join(__dirname, '../../ui/dist')));
 
-app.use('/chamber', proxyRoutes);
+app.use('/chamber', (req, res, next) => {
+  console.log(`\n========== [DEBUG APP] Chamber route started ==========`);  
+  console.log(`[DEBUG APP] Request: ${req.method} ${req.url}`);
+  next();
+}, proxyRoutes);
 
 app.use(authMiddleware);
 
@@ -90,18 +98,31 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 const openChamberService = new OpenChamberService();
 
 const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n========== [DEBUG SERVER] Server Started ==========`);  
   console.log(`MultiChamber server running on port ${PORT}`);
   console.log(`Environment: ${NODE_ENV}`);
+  console.log(`========== [DEBUG SERVER] Server Started ==========\n`);
 });
 
 // Handle WebSocket upgrades for chamber proxy
 server.on('upgrade', async (request, socket, head) => {
+  console.log(`\n========== [DEBUG SERVER] Upgrade Event ==========`);  
+  console.log(`[DEBUG SERVER] Timestamp: ${new Date().toISOString()}`);
   console.log(`[DEBUG SERVER] Upgrade event received for: ${request.url}`);
+  console.log(`[DEBUG SERVER] Request method: ${request.method}`);
+  console.log(`[DEBUG SERVER] Request headers:`);
+  console.log(JSON.stringify(request.headers, null, 2));
+  console.log(`[DEBUG SERVER] Head buffer size: ${head.length} bytes`);
+  console.log(`[DEBUG SERVER] Head buffer (hex): ${head.toString('hex').substring(0, 100)}`);
   const handled = await handleWebSocketUpgrade(request, socket, head, server);
+  console.log(`[DEBUG SERVER] WebSocket upgrade handled: ${handled}`);
   if (!handled) {
     console.log(`[DEBUG SERVER] WebSocket not handled by chamber proxy`);
     socket.destroy();
+  } else {
+    console.log(`[DEBUG SERVER] WebSocket upgrade completed`);
   }
+  console.log(`========== [DEBUG SERVER] Upgrade Event Completed ==========\n`);
 });
 
 process.on('SIGTERM', () => {

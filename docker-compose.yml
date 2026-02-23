@@ -12,7 +12,8 @@ services:
     
     environment:
       - MC_ADMIN_PASSWD=qwe321
-      - NODE_ENV=production
+      - NODE_ENV=development
+      - DEBUG=*
       - PORT=8080
       - HOST=0.0.0.0
       - JWT_SECRET=multichamber-secret-production
