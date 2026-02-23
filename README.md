@@ -158,7 +158,7 @@ MultiChamber/
 - `POST /mc13/api/admin/stop-instance/:username` - Stop user's OpenChamber
 
 ### Proxy
-- `GET /mc13/chamber/*` - Proxy to user's OpenChamber instance
+- `GET /*` - Proxy to user's OpenChamber instance
 
 ## Security Considerations
 

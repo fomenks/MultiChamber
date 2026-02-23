@@ -72,7 +72,7 @@ app.use('/mc13/api/terminal', authMiddleware, apiTerminalRouter);
 
 app.use('/mc13', express.static(path.join(__dirname, '../../ui/dist')));
 
-app.use('/mc13/chamber', proxyRoutes);
+app.use('/', proxyRoutes);
 
 app.use(authMiddleware);
 

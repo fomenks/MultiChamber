@@ -118,11 +118,6 @@ const dynamicProxy = (req: ExpressRequest, res: Response, next: NextFunction) =>
   const originalUrl = req.url || '/';
   let targetPath = originalUrl;
   
-  // Remove /mc13/chamber prefix
-  if (targetPath.startsWith('/mc13/chamber')) {
-    targetPath = targetPath.substring('/mc13/chamber'.length) || '/';
-  }
-  
   const targetHost = '127.0.0.1';
   
   console.log(`[DEBUG PROXY] Original URL: ${originalUrl}`);
@@ -141,7 +136,7 @@ const dynamicProxy = (req: ExpressRequest, res: Response, next: NextFunction) =>
   headers['host'] = `${targetHost}:${port}`;
   headers['X-MultiChamber-User'] = userInfo?.username || '';
   headers['X-MultiChamber-Admin'] = userInfo?.isAdmin ? 'true' : 'false';
-  headers['X-Forwarded-Prefix'] = '/mc13/chamber';
+  headers['X-Forwarded-Prefix'] = '';
   headers['X-Forwarded-Uri'] = originalUrl;
   
   console.log(`[DEBUG PROXY] Outgoing headers:`, JSON.stringify(headers, null, 2));
@@ -173,15 +168,8 @@ const dynamicProxy = (req: ExpressRequest, res: Response, next: NextFunction) =>
         const body = Buffer.concat(chunks).toString('utf8');
         console.log(`[DEBUG PROXY] HTML body length: ${body.length}`);
         
-        // Enhanced path rewriting
-        let rewrittenBody = body
-          .replace(/(href=["'])\//g, '$1/mc13/chamber/')
-          .replace(/(src=["'])\//g, '$1/mc13/chamber/')
-          .replace(/(action=["'])\//g, '$1/mc13/chamber/')
-          .replace(/(url\()\//g, '$1/mc13/chamber/')
-          .replace(/location\.origin/g, "'http://localhost:8080/mc13/chamber'")
-          // Handle relative URLs in CSS
-          .replace(/(url\s*\(\s*["']?)\//g, '$1/mc13/chamber/');
+        // Enhanced path rewriting - pass through as-is since proxy is at root
+        let rewrittenBody = body;
         
         const headers = { ...proxyRes.headers };
         delete headers['x-frame-options'];
@@ -440,12 +428,11 @@ export const handleWebSocketUpgrade = async (
 ) => {
   console.log(`[DEBUG WS] Upgrade request received for: ${request.url}`);
   
-  // Check if this is a chamber request or OpenChamber API request
-  const isChamberRequest = request.url?.startsWith('/mc13/chamber');
-  const isOpenChamberApiRequest = request.url?.startsWith('/mc13/api/terminal/');
+  // Check if this is NOT a /mc13 request (everything else goes to chamber)
+  const isChamberRequest = !request.url?.startsWith('/mc13');
   
-  if (!isChamberRequest && !isOpenChamberApiRequest) {
-    console.log(`[DEBUG WS] Not a chamber or OpenChamber API request, skipping`);
+  if (!isChamberRequest) {
+    console.log(`[DEBUG WS] Not a chamber request (starts with /mc13), skipping`);
     return false;
   }
   
@@ -502,11 +489,8 @@ export const handleWebSocketUpgrade = async (
     
     console.log(`[DEBUG WS] Proxying WebSocket to port ${port}`);
     
-    // Transform URL - remove /mc13/chamber prefix or /mc13/api/terminal prefix if present
+    // Transform URL - use as-is since proxy is at root
     let targetPath = request.url || '/';
-    if (targetPath.startsWith('/mc13/chamber')) {
-      targetPath = targetPath.substring('/mc13/chamber'.length) || '/';
-    }
     
     console.log(`[DEBUG WS] Original URL: ${request.url}, Target path: ${targetPath}`);
     
@@ -527,7 +511,7 @@ export const handleWebSocketUpgrade = async (
       let headerStr = `${request.method} ${targetPath} HTTP/1.1\r\n`;
       headerStr += `Host: 127.0.0.1:${port}\r\n`;
       headerStr += `X-MultiChamber-User: ${user.username}\r\n`;
-      headerStr += `X-Forwarded-Prefix: /mc13/chamber\r\n`;
+      headerStr += `X-Forwarded-Prefix: \r\n`;
       headerStr += `Upgrade: ${upgradeHeader}\r\n`;
       headerStr += `Connection: ${connectionHeader}\r\n`;
       
