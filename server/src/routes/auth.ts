@@ -1,13 +1,12 @@
 import { Router } from 'express';
 import { UserService } from '../services/userService.js';
-import { OpenChamberService } from '../services/openChamberService.js';
+import { openChamberService } from '../services/openChamberSingleton.js';
 import { JWTService } from '../services/jwtService.js';
 import { adminMiddleware } from '../middleware/auth.js';
 import type { Request, Response } from 'express';
 
 const router = Router();
 const userService = new UserService();
-const openChamberService = new OpenChamberService();
 
 // Login
 router.post('/login', async (req: Request, res: Response) => {

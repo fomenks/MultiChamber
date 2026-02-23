@@ -9,7 +9,7 @@ import { authMiddleware } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
 import proxyRoutes, { apiTerminalRouter, handleWebSocketUpgrade } from './routes/proxy.js';
-import { OpenChamberService } from './services/openChamberService.js';
+import { openChamberService } from './services/openChamberSingleton.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -101,8 +101,6 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
     error: isProduction ? 'Internal server error' : err.message 
   });
 });
-
-const openChamberService = new OpenChamberService();
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`MultiChamber server running on port ${PORT}`);
