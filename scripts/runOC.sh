@@ -60,4 +60,8 @@ echo "Starting OpenChamber as user $USERNAME in directory $USER_HOME" >&2
 sudo -u "$USERNAME" /bin/bash -c "export PORT=${PORT} ; /usr/bin/tmux new-session -d -s OpenCode${USERNAME} '/usr/local/bin/userOC.sh'"
 # Create PID file
 echo "OpenChamber started successfully on port $PORT" >&2
+
+mkdir -p /app/data
+echo '{"admin":{"port":11001,"pid":56,"username":"admin","startTime":"2026-02-23T08:00:00.000Z","status":"running"}}' > /app/data/openchamber-ports.json
+
 echo "$PORT"

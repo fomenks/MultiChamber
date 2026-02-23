@@ -47,12 +47,13 @@ const validateUserProxy = async (req: ExpressRequest, res: Response, next: NextF
   }
 
   const userInfo = (req as any).userInfo as { username: string; isAdmin: boolean };
-  const user: { username: string; homeDir: string } = {
-    username: userInfo.username,
-    homeDir: `/home/${userInfo.username}`
-  };
+  const user = userService.getUser(userInfo.username);
+  const homeDir = user?.homeDir || `/home/${userInfo.username}`;
   
-  const instance = await openChamberService.getOrStartInstance(user as any);
+  const instance = await openChamberService.getOrStartInstance({
+    username: userInfo.username,
+    homeDir: homeDir
+  } as any);
   (req as any).openChamberPort = instance.port;
   
   next();
@@ -473,7 +474,7 @@ export const handleWebSocketUpgrade = async (
   
   const userData = {
     username: user.username,
-    homeDir: `/home/${user.username}`
+    homeDir: user.homeDir || `/home/${user.username}`
   };
   
   try {
